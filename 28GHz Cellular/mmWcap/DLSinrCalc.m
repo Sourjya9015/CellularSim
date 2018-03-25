@@ -42,10 +42,7 @@ classdef DLSinrCalc
             kstreams = 1; % default
             if nargin == 2
                 multiacc = multiacsOpt.multiacs;
-                kstreams = multiacsOpt.K;
-                if (kstreams <= 0)
-                   error('Invalid value in  DLSinrCalc: multiacsOpt.K <= 0');
-                end
+                
             end
 
             txpow = txpow(:)';
@@ -56,6 +53,11 @@ classdef DLSinrCalc
             if (strcmpi(multiacc,'sdma'))
                 %disp('sdma transmission!');
                 txpow = txpow - 10*log10(kstreams);
+                kstreams = multiacsOpt.K;
+                if (kstreams <= 0)
+                   error('Invalid value in  DLSinrCalc: multiacsOpt.K <= 0');
+                end
+                
             end
             
             p = repmat(txpow,nue,1) - pathLoss;

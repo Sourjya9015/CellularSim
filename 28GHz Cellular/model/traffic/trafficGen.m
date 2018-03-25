@@ -2,7 +2,7 @@ classdef trafficGen < hgsetget
     % trafficGen:  Generates traffic patterns
     %  Simulates a poisson arrival process, with exponntial packet sizes
     
-    properties
+    properties (Access=private)
         % Always generates Poisson processes
         lambda;   % arrival rates, pkt/sec
         pktsize;  % mean packet size, in bits
@@ -12,6 +12,7 @@ classdef trafficGen < hgsetget
         nqueue;   % number of queues
         queues;   % data queues
         
+        totDat;   % total data arriving in the queue during the simulation epoch 
         totTime;
         arrivals; % arrival stat,arrivals.T = arrival time(1xN) and arrivals.type = maps to data dist.
         
@@ -63,6 +64,12 @@ classdef trafficGen < hgsetget
                 end
                 k = k+nflow;
             end
+            
+            obj.totDat = zeros(1,obj.nqueue);
+        end
+        
+        function tti = getTTI(obj)
+           tti =  obj.tti; 
         end
         
         function dequeue(obj,nbits,ind)
@@ -73,6 +80,8 @@ classdef trafficGen < hgsetget
             ql = obj.queues(ind) - nbits;
             obj.queues(ind) = ql;
         end
+        
+        
         
         function [size] = getQueue(obj, ind)
             size = obj.queues(ind);
@@ -86,9 +95,15 @@ classdef trafficGen < hgsetget
                     muPkt = obj.pktsize(obj.arrivals(usr).type);
                     
                     pktSz = exprnd(muPkt);  % exponentially distributed packet sizes
+                    obj.totDat(usr) = obj.totDat(usr) + pktSz;
+                    
                     obj.queues(usr) = obj.queues(usr)+ pktSz;
                 end
             end
+        end
+        
+        function totQueue = getTotDataQueues(obj)
+            totQueue = obj.totDat;
         end
     end
     

@@ -15,12 +15,7 @@ numsf = schedOpt.nsf;         % total number of subframes being simulated
 bw = schedOpt.bw;             % total bandwidth per BS (i.e channel BW) in MHz
 eta = schedOpt.eta;           % percentage of SF not used for control/channel estimation/reverse direction 
 
-tti = traffic.tti;            % subframe length in ms
-
-% nue = length(Icell);
-% usrQueue = zeros(1,nue); 
-% trafficParams.lambda = [1 5]; % in PDUs/sec
-% trafficParams.size = [500 10]; % in Mbits, mean size
+tti = (traffic.getTTI())*1e3;        % subframe length in ms; in trafficGen 'tti' is stored in seconds
 
 % for RR scheduler
 nue = length(Icell);
@@ -38,6 +33,10 @@ for sfnum = 1:numsf
     for bs=1:nbs
         ueind = find(Icell == bs);
         %dataQueue = usrQueue(Icell == bs);
+        
+        if (isempty(ueind))
+            continue; % no ue associated with BS
+        end
         
         nuebsi = length(ueind);
         
@@ -106,8 +105,12 @@ for sfnum = 1:numsf
    end
 end
 
-rate = totDataTxue/(numsf*tti*1e3); % in Mbps
-schedParam.rate = rate;
+totDataQueue = traffic.getTotDataQueues();
+totDataTxue(totDataQueue == 0) = []; % do not consider these; no data were Txed for these UEs
+totDataQueue(totDataQueue == 0) = [];
+schedParam.rate = totDataTxue/(numsf*tti*1e3);  % in Mbps
+schedParam.service = totDataTxue./totDataQueue; % [0,1] --> how much was served
+
 % we should do something with queue length etc.
 
 end

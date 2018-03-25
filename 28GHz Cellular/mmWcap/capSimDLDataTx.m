@@ -21,9 +21,9 @@ sinrLossdB = 3;     % loss relative to Shannon capacity
 bwMHz = 1000;       % Total bandwidth in MHz
 picoHex = true;     % Picocells sectorized with hex layout
 nsectPico = 3;      % num pico sectors in hex layout
-multacs = 'tdma';   % FDMA / TDMA flag
-multacsDL = 'sdma'; % TDMA/FDMA/SDMA
-bsNumStreams = 4;   % num of streams; equal to the num of RF streams
+multacs = 'fdma';   % FDMA / TDMA flag
+multacsDL = 'fdma'; % TDMA/FDMA/SDMA
+bsNumStreams = 1;   % num of streams; equal to the num of RF streams
 ndrop = 3;          % number of drops
 calcUL = false;     % calculate UL capacity
 calcDL = true;      % calculate DL capacity
@@ -260,16 +260,17 @@ if (calcDL)
     Pintfr = zeros(nue,ndrop);
     bwmq = zeros(nue,ndrop);
     
-    schedRateDL = zeros(nue,ndrop);
+    schedRateDL = [];
+    serviceDL = [];
 end
 
 tti = 1e-3; % in seconds
 nsf = 1000;
 trafficTime = tti*nsf;
 % Set traffic parameters
-trafficOpt.lambda = [100 10] ; % packets/sec
-trafficOpt.size = [1e3 1e8];  % mean size in Bytes
-trafficOpt.frac = [0.6 0.4];  % 70% users in small packets, 30% large packets
+trafficOpt.lambda = [5  3  1] ; % packets/sec
+trafficOpt.size = [1e3 2e5 1e9];  % mean size in Bytes
+trafficOpt.frac = [0.2 0.6 0.2];  % 80% users in small packets, 20% large packets
 trafficOpt.nqueue = nue;
 trafficOpt.tti = tti; % 1 ms, check 3GPP spec for this
 trafficOpt.totTime = trafficTime; % in second(s)
@@ -356,11 +357,12 @@ for idrop = 1 : ndrop
         schedOpt.numstreams = bsNumStreams;
         schedOpt.nsf = nsf;   % number fo SFs
         schedOpt.bw  = bwMHz; % in MHz
-        schedOpt.eta = dutyCycle*(1-overhead);
+        schedOpt.eta = 1;%dutyCycle*(1-overhead);
         
         schedOut = schedule( npico, Icell, seDL, trafficHandle, schedOpt);
         
-        schedRateDL(:,idrop) = schedOut.rate;
+        schedRateDL = [schedRateDL, schedOut.rate];
+        serviceDL = [serviceDL, schedOut.service];
         
         %nb
         Ps(:,idrop) = dlSinrCalc.psign;
@@ -394,7 +396,7 @@ if (calcDL)
     sinrDL = 10.^(0.1*sinrDLs(:));
     
     schedRateDL = sort(schedRateDL(:)); % per user rate
-    
+    serviceDL = sort(serviceDL(:));     % service provided per UE
     %nb
     bwmq = bwmq(:);
     snrDL = Ps./N0;
@@ -433,19 +435,26 @@ if ~exist('param','var')
         xlabel('Rate (Mbps)');
         ylabel('Cummulative prob');
         grid on; hold on;
-        axis([1 1e5 0 1]);
+        axis([1e-3 1e5 0 1]);
         fprintf(1,'DL:  mean=%10.4e cell-edge=%10.4e \n', avgRateDL, edgeRateDL );
         
         
         % for scheduled rate
-        nsched = length(schedRateDL);
+        nsched = length(serviceDL);
         prob = (1:nsched)/nsched;
-        figure(1); hold on;
-        semilogx(sort(schedRateDL),prob,'--','Linewidth',2);
+        figure(2); 
+        hold on;
+        
+        cdf = serviceDL;
+        
+        plot(cdf,prob,'-','Linewidth',2);
         grid on;
+        axis([0 1 0 1]);
         set(gca,'FontSize',16);
-        %xlabel('Scheduled Rate (Mbps)');
-        legend('Theoretical','Scheduled');
+        xlabel(' fraction of data delevered');
+        ylabel('CDF');
+        title('Service with RR Scheduler');
+        %legend('Theoretical','Scheduled');
         
         
     end
