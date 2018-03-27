@@ -16,12 +16,16 @@ classdef DLSinrCalc
         psign; % signal power dB
         pnoise; % noise power dB
         pintrfr; % interference power dB
+        
+        psdNoise; % Noise power spectral density.
                 
         % Number of UEs per base station
         nueBS;
         
         % Bandwidth in MHz assigned to each UE
         bwMHz;
+        bwMHzTot;
+        maxStreams = 1; % Only set for SDMA systems
                 
         % Options
         sirLossdB = 3;      % Loss from Shannon capacity
@@ -34,7 +38,7 @@ classdef DLSinrCalc
             pathLoss = opt.pathLoss;    % path loss in dB  (nue X nbs)
             txpow = opt.txpow;          % max TX pow in dBm
             noisepow = opt.noisepow;    % noise power in dBm   
-            bwMHzTot = opt.bwMHzTot;    % bandwidth in MHz
+            obj.bwMHzTot = opt.bwMHzTot;    % bandwidth in MHz
             Icell = opt.Icell;            % Icell(j) = RX index for TX i
             [nue,nbs] = size(opt.pathLoss); % Dimensions
             
@@ -48,12 +52,13 @@ classdef DLSinrCalc
             txpow = txpow(:)';
 
             
-            % SD: Tx power need to be divided into K streams
-            % for SDMA
+            % Tx power divided into K streams for SDMA
             if (strcmpi(multiacc,'sdma'))
                 %disp('sdma transmission!');
-                txpow = txpow - 10*log10(kstreams);
                 kstreams = multiacsOpt.K;
+                txpow = txpow - 10*log10(kstreams);
+
+                obj.maxStreams = kstreams;
                 if (kstreams <= 0)
                    error('Invalid value in  DLSinrCalc: multiacsOpt.K <= 0');
                 end
@@ -65,7 +70,7 @@ classdef DLSinrCalc
             
             sigpow = zeros(nue,1);
             for iue = 1:nue
-                sigpow(iue) = p(iue,Icell(iue));
+                sigpow(iue) = p(iue,Icell(iue));    % Tx power/pathLoss (lin scale)
             end
             
             obj.nueBS = zeros(nbs,1);
@@ -85,6 +90,22 @@ classdef DLSinrCalc
             
             p(:,disabledTx) = 0;
             
+            % rate calculation, Mbps/cell (@BW = obj.bwMHz)
+            obj.bwMHz = zeros(nue,1);
+            for iue = 1 : nue
+                obj.bwMHz(iue) = kstreams*obj.bwMHzTot/obj.nueBS(Icell(iue)); % cell capacity
+            end
+            
+            obj.psdNoise = noisepow - 10*log10(obj.bwMHzTot); % Make sure this has a +60 for the MHz conversoin in the main script
+            
+            if(length(noisepow) == 1)
+                noisepow = repmat(noisepow,nue,1);
+            end
+               
+            if(strcmpi(multiacc,'fdma'))
+                noisepow = noisepow - 10*log10(obj.bwMHzTot) + 10*log10(obj.bwMHz);
+            end
+            
             % SINR & INR calculation
             noisepow = 10.^(0.1*noisepow);
             totPow = sum(p,2) + noisepow;
@@ -101,15 +122,39 @@ classdef DLSinrCalc
             obj.pintrfr = totPow - sigpow - noisepow;
             
             
-            % rate calculation, Mbps/cell (@BW = obj.bwMHz)
-            obj.bwMHz = zeros(nue,1);
-            for iue = 1 : nue
-                obj.bwMHz(iue) = kstreams*bwMHzTot/obj.nueBS(Icell(iue)); % cell capacity
-            end            
+                       
             beta = 10^(-0.1*obj.sirLossdB);
             se = log2(1 + beta*(10.^(0.1*(obj.sinr)))); % spectral efficiency
             obj.specEff = se;
             obj.rate = obj.bwMHz.*min(se, obj.maxSe);            
+        end
+        
+        % Computes the SINR and SE for each BS. The BW (opt.bw) should be
+        % set using the particular scheduling algorithm.
+        % return the SINR and the Spectral efficiencies for data Tx.
+        function specEff = DlSinrCalcBSi (obj, opt)
+            
+            ueSched = opt.ueSched; % List of UEs scheduled in this instant
+            bwSched = opt.bwSched;    % a vector of bandwidth allocated to each user
+            splitK = opt.powSplit;
+            
+            noisePow = obj.psdNoise + 10*log10(bwSched);
+            
+            % already store in Linear scale
+            sigPow = obj.psign(ueSched);
+            % do appropriate power division when max streams are not used
+            if (obj.maxStreams > splitK)
+                sigPow = sigPow*obj.maxStreams/splitK; % in linear scale   
+            end
+            
+            intf   = obj.pintrfr(ueSched);
+            
+            noisePow = 10.^(0.1*noisePow);
+            Sinr = sigPow./(intf+noisePow);
+            
+            beta = 10^(-0.1*obj.sirLossdB);
+            specEff = log2(1 + beta*(10.^(0.1*(Sinr))));
+            specEff = min(specEff, obj.maxSe);
         end
         
     end

@@ -1,4 +1,4 @@
-function [ schedParam ] = schedule( nbs, Icell, se, traffic, schedOpt)
+function [ schedParam ] = schedule( nbs, Icell, sinrObj, traffic, schedOpt)
 %SCHEDULE Summary of this function goes here
 %   Detailed explanation goes here
 % Input:
@@ -39,63 +39,88 @@ for sfnum = 1:numsf
         end
         
         nuebsi = length(ueind);
-        
         nxtIndx = bsUserIndex(bs);
-        %availDof = totDoF;
-        startIndx = nxtIndx;
+
+        %startIndx = nxtIndx;
+        
+        pktSz = traffic.getQueue(ueind);
+        
+        if (isempty(pktSz~=0))
+            continue;
+        end
+        
         % FDMA can be done with digital BF and multiple streams
         if (strcmpi(multiacs,'fdma'))
-            availDof = totDoF; % check this. Should this be DoF*K? Discuss.
+
+            % Equally split the BW between all users with Data
+            % Not ideal, but this is RR scheduling in OFDMA terms.
+            % (Verify this)
+            Dlopt.ueSched = ueind(pktSz~=0);
+            Dlopt.bwSched = ones(length(Dlopt.ueSched),1)*(bw/length(Dlopt.ueSched)); % equal BW distribution
+            Dlopt.powSplit = 1; % No split in total power for FDMA
+
+            specEff = sinrObj.DlSinrCalcBSi(Dlopt);
             
-            while (availDof > 0)
-                uei = ueind(nxtIndx);
-                seij = se(uei);
-                pktSz = traffic.getQueue(uei);
-                
-                dofReq = pktSz/seij;
-                
-                if (dofReq > availDof)
-                    txData = availDof*seij;
-                    availDof = 0;
-                else
-                    txData = pktSz;
-                    availDof = availDof - dofReq;
-                end
-                traffic.dequeue(txData, uei);
-                
-                totDataTxue(uei) = totDataTxue(uei) + txData;
-                %Update the next UE index to be scheduled
-                nxtIndx = (nxtIndx == nuebsi)*1 + (nxtIndx < nuebsi)*(nxtIndx+1);
-                if (startIndx == nxtIndx) 
-                    break; % exhausted all set of users.
-                end
-                
-            end
+            pktSz = pktSz(pktSz~=0);
+            txData = min( pktSz, ((specEff.*Dlopt.bwSched*1e6)*tti*1e-3)');
+            
+            traffic.dequeue(txData, Dlopt.ueSched);
+            
+            totDataTxue(Dlopt.ueSched) = totDataTxue(Dlopt.ueSched) + txData;
             
         elseif (strcmpi(multiacs,'sdma') || strcmpi(multiacs,'tdma') )
-            availDof = totDoF;
             
+            Dlopt.ueSched = ueind;
+            Dlopt.bwSched = ones(length(Dlopt.ueSched),1)*bw; % assign total bandwidth
+            Dlopt.powSplit = min(K, sum(pktSz~=0)); % Max number of beams in which the power is split
+            %disp(sum(pktSz~=0));
+            specEff = sinrObj.DlSinrCalcBSi(Dlopt);
+            
+            
+            numStreams = Dlopt.powSplit; % upper bounded by the number of users
+            
+            ns = 1;
+
             % schedule each stream
-            for schedInd = 1:K
-                uei = ueind(nxtIndx);
-                seij = se(uei);
-                pktSz = traffic.getQueue(uei);
+            
+            while (ns <= numStreams)
+                uei = Dlopt.ueSched(nxtIndx);
                 
-                dofReq = pktSz/seij;
-                if (dofReq > availDof)
-                    txData = availDof*seij;
-                else
-                    txData = pktSz;
+                pktSzi = pktSz(nxtIndx);
+                
+                if (pktSzi == 0)
+                    nxtIndx = (nxtIndx == nuebsi)*1 + (nxtIndx < nuebsi)*(nxtIndx+1);
+                    continue; % end the loop without increasing ns
                 end
+                seij = specEff(nxtIndx);
                 
+                txData = min( (seij*Dlopt.bwSched(nxtIndx)*1e6)*tti*1e-3, pktSzi);
                 traffic.dequeue(txData, uei);
                 totDataTxue(uei) = totDataTxue(uei) + txData;
-                %Update the next UE index to be scheduled
+                
                 nxtIndx = (nxtIndx == nuebsi)*1 + (nxtIndx < nuebsi)*(nxtIndx+1);
-                if (startIndx == nxtIndx) 
-                    break; % exhausted all set of users. When K > Nue
-                end
+                ns = ns+1;
             end
+%             for schedInd = 1:numStreams
+%                 uei = ueind(nxtIndx);
+%                 seij = specEff(nxtIndx);
+%                 pkt = pktSz(nxtIndx);
+%                 
+%                 dofReq = pktSz/seij;
+%                 if (dofReq > availDof)
+%                     txData = availDof*seij;
+%                 else
+%                     txData = pktSz;
+%                 end
+%                 
+%                 traffic.dequeue(txData, uei);
+%                 totDataTxue(uei) = totDataTxue(uei) + txData;
+%                 %Update the next UE index to be scheduled
+%                 nxtIndx = (nxtIndx == nuebsi)*1 + (nxtIndx < nuebsi)*(nxtIndx+1);
+%                 if (startIndx == nxtIndx) 
+%                     break; % exhausted all set of users. When K > Nue
+%                 end
+%             end
         else
             error('Unknown/unsupported multiple access scheme');
         end

@@ -5,8 +5,8 @@ addpath(genpath('..'));
 
 % Parameters
 picoRadius = 100;  % cell radius for picocells
-nuePerPico = 10;   % num ues per macro sector
-posLim0 = [2000 2000]';     % area for region in meters
+nuePerPico = 20;   % num ues per macro sector
+posLim0 = [1000 1000]';     % area for region in meters
 chanIfName = 'lte-chan-if'; % name for all the channel interfaces
 devName = 'lte-dev';        % name for all the LTE network devices
 picoTxPow = 35;     % Pico TX power in dBm
@@ -21,9 +21,9 @@ sinrLossdB = 3;     % loss relative to Shannon capacity
 bwMHz = 1000;       % Total bandwidth in MHz
 picoHex = true;     % Picocells sectorized with hex layout
 nsectPico = 3;      % num pico sectors in hex layout
-multacs = 'fdma';   % FDMA / TDMA flag
-multacsDL = 'fdma'; % TDMA/FDMA/SDMA
-bsNumStreams = 1;   % num of streams; equal to the num of RF streams
+multacs = 'tdma';   % FDMA / TDMA flag
+multacsDL = 'sdma'; % TDMA/FDMA/SDMA
+bsNumStreams = 4;   % num of streams; equal to the num of RF streams
 ndrop = 3;          % number of drops
 calcUL = false;     % calculate UL capacity
 calcDL = true;      % calculate DL capacity
@@ -268,9 +268,9 @@ tti = 1e-3; % in seconds
 nsf = 1000;
 trafficTime = tti*nsf;
 % Set traffic parameters
-trafficOpt.lambda = [5  3  1] ; % packets/sec
+trafficOpt.lambda = [100  10  1] ; % packets/sec
 trafficOpt.size = [1e3 2e5 1e9];  % mean size in Bytes
-trafficOpt.frac = [0.2 0.6 0.2];  % 80% users in small packets, 20% large packets
+trafficOpt.frac = [0.3 0.3 0.4];  % 80% users in small packets, 20% large packets
 trafficOpt.nqueue = nue;
 trafficOpt.tti = tti; % 1 ms, check 3GPP spec for this
 trafficOpt.totTime = trafficTime; % in second(s)
@@ -357,9 +357,9 @@ for idrop = 1 : ndrop
         schedOpt.numstreams = bsNumStreams;
         schedOpt.nsf = nsf;   % number fo SFs
         schedOpt.bw  = bwMHz; % in MHz
-        schedOpt.eta = 1;%dutyCycle*(1-overhead);
+        schedOpt.eta = dutyCycle*(1-overhead);
         
-        schedOut = schedule( npico, Icell, seDL, trafficHandle, schedOpt);
+        schedOut = schedule( npico, Icell, dlSinrCalc, trafficHandle, schedOpt);
         
         schedRateDL = [schedRateDL, schedOut.rate];
         serviceDL = [serviceDL, schedOut.service];
@@ -435,7 +435,7 @@ if ~exist('param','var')
         xlabel('Rate (Mbps)');
         ylabel('Cummulative prob');
         grid on; hold on;
-        axis([1e-3 1e5 0 1]);
+        axis([1 1e4 0 1]);
         fprintf(1,'DL:  mean=%10.4e cell-edge=%10.4e \n', avgRateDL, edgeRateDL );
         
         

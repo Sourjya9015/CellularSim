@@ -74,11 +74,11 @@ classdef trafficGen < hgsetget
         
         function dequeue(obj,nbits,ind)
             
-            if (ind > obj.nqueue)
+            if (sum(ind > obj.nqueue) > 0)
                error('Index out of bound for traffic queue'); 
             end
-            ql = obj.queues(ind) - nbits;
-            obj.queues(ind) = ql;
+            
+            obj.queues(ind) = max(obj.queues(ind) - nbits, 0);    
         end
         
         
