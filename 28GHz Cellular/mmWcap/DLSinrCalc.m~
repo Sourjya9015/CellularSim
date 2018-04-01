@@ -113,17 +113,14 @@ classdef DLSinrCalc
             sigPowdB = 10*log10(sigpow);
             
             iplusn = 10*log10(totPow - sigpow);  % interference and noise
-            %obj.sinr = sigPowdB - iplusn;       % SINR
-           
-            %nb : calculate the quantized SINR
+            %nb 
             gamma = 10.^(0.1*(sigPowdB - iplusn));              % pre-quantization SINR (lin)
-            gamma_sansRxBF = gamma ./ (10.^(0.1*opt.rxBFgains));            
-            gamma_q = ((1 - opt.alpha)*gamma)./(1 + opt.alpha*gamma_sansRxBF);       % SINR after quantization
+            gamma_sansRxBF = gamma ./ 10.^(0.1*opt.rxBFgains);
+            
+            gamma_q = ((1 - alpha)*gamma)./(1 + alpha*gamma_sansRxBF);       % SINR after quantization
             obj.sinr = 10*log10(gamma_q);
             obj.inr = 10*log10(totPow - sigpow - noisepow) - 10*log10(noisepow); % interference to noise ratio
-            %debug:
-            [10*log10(gamma) 10*log10(gamma_q) opt.rxBFgains]
-            
+
             %nb:
             %powers in linear:
             obj.psign = sigpow;
