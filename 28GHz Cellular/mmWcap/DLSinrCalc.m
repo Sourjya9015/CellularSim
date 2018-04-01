@@ -16,7 +16,8 @@ classdef DLSinrCalc
         psign;      % signal power dB
         pnoise;     % noise power dB
         pintrfr;    % interference power dB
-
+        alpha;      % inverse coding gain due to quant.
+        rxBFgains;  % Rx BF gains (dB)
         
         psdNoise; % Noise power spectral density.
                 
@@ -116,24 +117,22 @@ classdef DLSinrCalc
             %obj.sinr = sigPowdB - iplusn;       % SINR
            
             %nb : calculate the quantized SINR
+            obj.alpha = opt.alpha;
+            obj.rxBFgains = opt.rxBFgains;
             gamma = 10.^(0.1*(sigPowdB - iplusn));              % pre-quantization SINR (lin)
-            gamma_sansRxBF = gamma ./ (10.^(0.1*opt.rxBFgains));            
-            gamma_q = ((1 - opt.alpha)*gamma)./(1 + opt.alpha*gamma_sansRxBF);       % SINR after quantization
+            gamma_sansRxBF = gamma ./ (10.^(0.1*obj.rxBFgains));            
+            gamma_q = ((1 - obj.alpha)*gamma)./(1 + obj.alpha*gamma_sansRxBF);       % SINR after quantization
             obj.sinr = 10*log10(gamma_q);
             obj.inr = 10*log10(totPow - sigpow - noisepow) - 10*log10(noisepow); % interference to noise ratio
             %debug:
-            [10*log10(gamma) 10*log10(gamma_q) opt.rxBFgains]
+            [10*log10(gamma) 10*log10(gamma_q) obj.rxBFgains]
             
             %nb:
             %powers in linear:
             obj.psign = sigpow;
             obj.pnoise = noisepow;
             obj.pintrfr = totPow - sigpow - noisepow;
-            
-            display('Checking size: obj.sinr:');
-            size(obj.sinr)
-            
-            
+                
                        
             beta = 10^(-0.1*obj.sirLossdB);
             se = log2(1 + beta*(10.^(0.1*(obj.sinr)))); % spectral efficiency
@@ -144,7 +143,11 @@ classdef DLSinrCalc
         % Computes the SINR and SE for each BS. The BW (opt.bw) should be
         % set using the particular scheduling algorithm.
         % return the SINR and the Spectral efficiencies for data Tx.
-        function specEff = DlSinrCalcBSi (obj, opt)
+        
+        % nb: This fn. works properly only if DlSinrCalc has been called
+        % before. It is a weird dependency!
+        
+        function specEff = DlSinrCalcBSi (obj, opt) 
             
             ueSched = opt.ueSched; % List of UEs scheduled in this instant
             bwSched = opt.bwSched;    % a vector of bandwidth allocated to each user
@@ -162,7 +165,10 @@ classdef DLSinrCalc
             intf   = obj.pintrfr(ueSched);
             
             noisePow = 10.^(0.1*noisePow);
-            Sinr = sigPow./(intf+noisePow);
+            %nb:
+            gamma = sigPow./(intf+noisePow);
+            gamma_sansRxBF = gamma ./ (10.^(0.1*obj.rxBFgains(ueSched)));
+            Sinr = ((1 - obj.alpha)*gamma)./(1 + obj.alpha*gamma_sansRxBF); % Sinr after quantization
             
             beta = 10^(-0.1*obj.sirLossdB);
             specEff = log2(1 + beta*(10.^(0.1*(Sinr))));

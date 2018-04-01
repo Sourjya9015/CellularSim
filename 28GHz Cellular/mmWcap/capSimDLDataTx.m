@@ -353,9 +353,7 @@ for idrop = 1 : ndrop
         % Calculate rates
         dlSinrCalc = DLSinrCalc(opt, multiacsOpt);
         rateDL = dlSinrCalc.rate;     % all these are per UE (3900x1)
-        sinrDL = dlSinrCalc.sinr;   %nb can change here or inside!
-        % nb: sinrDL = 
-        
+        sinrDL = dlSinrCalc.sinr;     % here SINR is post-quant sinr
         inrDL = dlSinrCalc.inr;
         seDL = dlSinrCalc.specEff;
         
