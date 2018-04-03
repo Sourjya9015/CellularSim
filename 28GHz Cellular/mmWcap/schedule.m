@@ -35,7 +35,7 @@ for sfnum = 1:numsf
     traffic.genTraffic(sfnum);
     
     for bs=1:nbs
-        ueind = find(Icell == bs);
+        ueind = find(Icell == bs); % indices of UEs attached to bs
         %dataQueue = usrQueue(Icell == bs);
         
         if (isempty(ueind))

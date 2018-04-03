@@ -42,6 +42,9 @@ pedge = 0.05;       % cell-edge percentage = 5
 dutyCycle = 0.5;    % 50 percent is for DL
 overhead = 0.2;     % 20 percent overhead
 
+nbits = 4;          % quantization bits
+[~,alpha,~] = unifQuant(nbits);
+
 % Process parameters for batch if a parameter string was supplied
 if exist('param0', 'var')
     nparam = length(param0)/2;
@@ -294,7 +297,8 @@ for idrop = 1 : ndrop
     bfOpt.txpow = repmat( picoTxPow, npico, 1);    % max TX pow in dBm
     bfOpt.noisepow = chan.kT + 60 + 10*log10(bwMHz) + ueNoiseFig;
     [pathLossDL,pathLossUL,bfGainRxDLdes] = applyBfGain(pathLoss', Icell, bfOpt);
-    
+    display('Checking size: bfGainRxDLdes:');
+    size(bfGainRxDLdes)
     % Reduce BF gain if BS is reduced to single stream processing
     if (nstreamBS > 0)
         bfOpt.nstream = nstreamBS;
@@ -338,7 +342,9 @@ for idrop = 1 : ndrop
         opt.Icell = Icell;                                                  % Icell(j) = RX index for TX i
         opt.bwMHzTot = bwMHz;                                               % Total bandwidth in MHz
         opt.noisepow = chan.kT + 60 + 10*log10(bwMHz) + ueNoiseFig;         % for M antennas
-        % noise power in dBm
+        opt.rxBFgains = bfGainRxDLdes;                                      % Rx BF gains to the home BS
+        opt.alpha = alpha;              
+
         
         % nultiple access based parameters
         multiacsOpt.multiacs = multacsDL;
@@ -347,7 +353,7 @@ for idrop = 1 : ndrop
         % Calculate rates
         dlSinrCalc = DLSinrCalc(opt, multiacsOpt);
         rateDL = dlSinrCalc.rate;     % all these are per UE (3900x1)
-        sinrDL = dlSinrCalc.sinr;
+        sinrDL = dlSinrCalc.sinr;     % here SINR is post-quant sinr
         inrDL = dlSinrCalc.inr;
         seDL = dlSinrCalc.specEff;
         

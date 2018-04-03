@@ -275,7 +275,7 @@ for idrop = 1 : ndrop
     % the NLOS channel
     bfOpt.txpow = repmat( picoTxPow, npico, 1);    % max TX pow in dBm
     bfOpt.noisepow = chan.kT + 60 + 10*log10(bwMHz) + ueNoiseFig;
-    [pathLossDL,pathLossUL,bfGainRxDLdes] = applyBfGain(pathLoss', Icell, bfOpt);
+    [pathLossDL, pathLossUL, bfGainRxDLdes] = applyBfGain(pathLoss', Icell, bfOpt);
     
     % Reduce BF gain if BS is reduced to single stream processing
     if (nstreamBS > 0)
@@ -423,7 +423,7 @@ if ~exist('param','var')
     end
     
 end
-
+%%
 
 %nb
 nbits = 2:6;
@@ -441,9 +441,11 @@ if nstreamBS > 0
     rxBfgaindB = 10*log10(nantUE);
     sinrDLnoRxg = sinrDL./(10^(0.1*(rxBfgaindB - ltBFloss))); %SINR without Rxgain
 else
+    %%
     sinrDLnoRxg = sinrDL./bfGainRxDLdes; %SINR without Rxgain
-end
 
+end
+%%
 for ibit = 1: length(nbits)    
     [~,rho,~] = unifQuant(nbits(:,ibit));
     % sinrDL is the sinr with Tx and Rx beamforming
