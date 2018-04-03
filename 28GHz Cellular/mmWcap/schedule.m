@@ -1,11 +1,15 @@
 function [ schedParam ] = schedule( nbs, Icell, sinrObj, traffic, schedOpt)
-%SCHEDULE Summary of this function goes here
-%   Detailed explanation goes here
+%SCHEDULE: Round robin scheduler
+%   FDMA/TDM/SDMA based scheduling of DL links in a picocellular multi-BS
+%   environment.
 % Input:
-% nbs     : number of basestations
+% nbs     : number of base stations
 % Icell   : UE's assicaition with BS
 % se      : spectral efficienncy, should consider power splitting due to SDMA
 % schedOpt: options required for scheduling
+% Output:
+% schedParam : Results obtained from scheduled data Tx, like rate, etc.
+%              Extendable to contain different metrics.
 
 
 
@@ -62,7 +66,7 @@ for sfnum = 1:numsf
             specEff = sinrObj.DlSinrCalcBSi(Dlopt);
             
             pktSz = pktSz(pktSz~=0);
-            txData = min( pktSz, ((specEff.*Dlopt.bwSched*1e6)*tti*1e-3)');
+            txData = min( pktSz, (eta*(specEff.*Dlopt.bwSched*1e6)*tti*1e-3)');
             
             traffic.dequeue(txData, Dlopt.ueSched);
             
@@ -72,18 +76,32 @@ for sfnum = 1:numsf
             
             Dlopt.ueSched = ueind;
             Dlopt.bwSched = ones(length(Dlopt.ueSched),1)*bw; % assign total bandwidth
-            Dlopt.powSplit = min(K, sum(pktSz~=0)); % Max number of beams in which the power is split
-            %disp(sum(pktSz~=0));
+            Dlopt.powSplit = min(K, sum(pktSz~=0));           % Max number of beams in which the power is split
+            
             specEff = sinrObj.DlSinrCalcBSi(Dlopt);
             
             
             numStreams = Dlopt.powSplit; % upper bounded by the number of users
             
             ns = 1;
+            startIndex = nxtIndx;
+            flag = 0;
 
             % schedule each stream
             
             while (ns <= numStreams)
+                
+                % Prevents infinite loops when no data is available or
+                % number of streams available is very large
+                if (nxtIndx == startIndex)
+                    flag = flag + 1;
+                end
+                
+                if (flag > 1) 
+                    break; 
+                end
+                %------------------------------------------------------
+                
                 uei = Dlopt.ueSched(nxtIndx);
                 
                 pktSzi = pktSz(nxtIndx);
@@ -94,7 +112,7 @@ for sfnum = 1:numsf
                 end
                 seij = specEff(nxtIndx);
                 
-                txData = min( (seij*Dlopt.bwSched(nxtIndx)*1e6)*tti*1e-3, pktSzi);
+                txData = min( eta*(seij*Dlopt.bwSched(nxtIndx)*1e6)*tti*1e-3, pktSzi);
                 traffic.dequeue(txData, uei);
                 totDataTxue(uei) = totDataTxue(uei) + txData;
                 
@@ -131,10 +149,22 @@ for sfnum = 1:numsf
 end
 
 totDataQueue = traffic.getTotDataQueues();
+
+[Eq, waitTime] = traffic.calcAvgQueueLength(numsf);
+
 totDataTxue(totDataQueue == 0) = []; % do not consider these; no data were Txed for these UEs
+Eq(totDataQueue == 0) = [];
+waitTime(totDataQueue == 0) = [];
 totDataQueue(totDataQueue == 0) = [];
+
+
 schedParam.rate = totDataTxue/(numsf*tti*1e3);  % in Mbps
 schedParam.service = totDataTxue./totDataQueue; % [0,1] --> how much was served
+
+schedParam.avgQueueLen = Eq;
+schedParam.avgWait = waitTime;
+
+
 
 % we should do something with queue length etc.
 

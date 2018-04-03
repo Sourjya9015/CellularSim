@@ -11,9 +11,11 @@ classdef trafficGen < hgsetget
         nflows;
         nqueue;   % number of queues
         queues;   % data queues
+        arrRates; % per user arrival rate
         
         totDat;   % total data arriving in the queue during the simulation epoch 
         totTime;
+        cumQueueLen; % cumulative queue length, used to calculate the average
         arrivals; % arrival stat,arrivals.T = arrival time(1xN) and arrivals.type = maps to data dist.
         
         tti;      % transmission time intervals
@@ -41,6 +43,8 @@ classdef trafficGen < hgsetget
             
             obj.nqueue = trafficOpt.nqueue;
             obj.queues = zeros(1,obj.nqueue);
+            obj.cumQueueLen = zeros(1,obj.nqueue);
+            obj.arrRates = zeros(1,obj.nqueue);
             
             obj.tti = trafficOpt.tti; % the Transmission time intervals
             obj.totTime = ceil(trafficOpt.totTime); % total time in seconds
@@ -55,6 +59,7 @@ classdef trafficGen < hgsetget
                 
                 nflow = round(obj.frac(icnt)*obj.nqueue);
                 
+                
                 for jcnt = k:(k+nflow-1)
                     arv = false(1,numSF); % saves size, use logicals
                     rnd = rand(size(arv));
@@ -62,6 +67,9 @@ classdef trafficGen < hgsetget
                     obj.arrivals(inds(jcnt)).T    = arv;  % 0-1 list of SFs with arrivals/no arrival
                     obj.arrivals(inds(jcnt)).type = icnt; % Maps to the size of packet
                 end
+                
+                % convert to average b/s from pkt/s: lambda (pkts/s) * avgPktSize (bits/pkts)
+                obj.arrRates(inds(k:(k+nflow-1))) = obj.lambda(icnt)*obj.pktsize(icnt);
                 k = k+nflow;
             end
             
@@ -89,8 +97,9 @@ classdef trafficGen < hgsetget
         
         function genTraffic(obj, sfnum)
             
-            % Check, can this be vectorized? Seems like it!
+            % Check, can this be vectorized?
             for usr=1:obj.nqueue
+
                 if(obj.arrivals(usr).T(sfnum) == true)
                     muPkt = obj.pktsize(obj.arrivals(usr).type);
                     
@@ -98,12 +107,24 @@ classdef trafficGen < hgsetget
                     obj.totDat(usr) = obj.totDat(usr) + pktSz;
                     
                     obj.queues(usr) = obj.queues(usr)+ pktSz;
-                end
+                end 
             end
+            
+            % Update the avarage queue length
+            % compute queue length here. Packets arriving now are
+            % served in the next SF at the earliest.
+            obj.cumQueueLen = obj.cumQueueLen+ obj.queues;
         end
+
         
         function totQueue = getTotDataQueues(obj)
             totQueue = obj.totDat;
+        end
+        
+        function [Eq, T] = calcAvgQueueLength (obj, numSFtot)
+            Eq = obj.cumQueueLen/numSFtot;
+            
+            T = Eq./obj.arrRates;
         end
     end
     
