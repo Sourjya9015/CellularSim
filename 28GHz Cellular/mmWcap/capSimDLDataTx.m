@@ -1,5 +1,5 @@
 % Uplink and Downlink capacity simulation
-
+clc;
 % Set path to contain all the subdirectories of NetSim
 addpath(genpath('..'));
 
@@ -24,7 +24,7 @@ nsectPico = 3;      % num pico sectors in hex layout
 multacs = 'fdma';   % FDMA / TDMA flag
 multacsDL = 'fdma'; % TDMA/FDMA/SDMA
 bsNumStreams = 1;   % num of streams; equal to the num of RF streams
-ndrop = 3;          % number of drops
+ndrop = 1;          % number of drops
 calcUL = false;     % calculate UL capacity
 calcDL = true;      % calculate DL capacity
 plModType = 'hybrid';    % select either 'hybrid' or 'dist'
@@ -42,8 +42,9 @@ pedge = 0.05;       % cell-edge percentage = 5
 dutyCycle = 0.5;    % 50 percent is for DL
 overhead = 0.2;     % 20 percent overhead
 
-nbits = 4;          % quantization bits
-[~,alpha,~] = unifQuant(nbits);
+nbits = 0;          % quantization bits
+%[~,alpha,~] = unifQuant(nbits);
+alpha = 0;
 
 % Process parameters for batch if a parameter string was supplied
 if exist('param0', 'var')
@@ -268,12 +269,12 @@ if (calcDL)
 end
 
 tti = (1/8)*1e-3; % in seconds
-nsf = 8000;
+nsf = 1000;
 trafficTime = tti*nsf;
 % Set traffic parameters
-trafficOpt.lambda = [100   10   1] ; % packets/sec
-trafficOpt.size   = [1e3   1e5  1e9];  % mean size in Bytes
-trafficOpt.frac   = [0.5   0.4  0.1];  % heavily dominated by small packets
+trafficOpt.lambda = [200   20   2] ; % packets/sec
+trafficOpt.size   = [100   1e4  1e9];  % mean size in Bytes
+trafficOpt.frac   = [0.2   0.3  0.5];  % fraction of users in each traffic group
 trafficOpt.nqueue = nue;
 trafficOpt.tti = tti; % 1/8 ms, check 3GPP spec for this, 1ms SF split into 8 slots
 trafficOpt.totTime = trafficTime; % in second(s)
@@ -288,17 +289,16 @@ for idrop = 1 : ndrop
     % Get path loss and DL SINR
     [sinrDL, Icell, pathLoss, txpowDL] = chan.computeSinr('ue:mmW', {'pico:mmW'}); % args: rx,tx
     % Notes SD: 
-    % pathLoss -> 390x3900 matrix tabling the pathloss between each UE-BS pair. 
-    % Icell    -> 1x3900   vector recording BS each UE is associated to. 
-    % txpowDL  -> 1x390    DL Tx power of BSs.
+    % pathLoss -> nbsxnue  matrix tabling the pathloss between each UE-BS pair. 
+    % Icell    -> 1xnue    vector recording BS each UE is associated to. 
+    % txpowDL  -> 1xnbs    DL Tx power of BSs.
     
     % Apply the BF gain -- assuming all links have a spatial structure as
     % the NLOS channel
     bfOpt.txpow = repmat( picoTxPow, npico, 1);    % max TX pow in dBm
     bfOpt.noisepow = chan.kT + 60 + 10*log10(bwMHz) + ueNoiseFig;
-    [pathLossDL,pathLossUL,bfGainRxDLdes] = applyBfGain(pathLoss', Icell, bfOpt);
-    display('Checking size: bfGainRxDLdes:');
-    size(bfGainRxDLdes)
+    bfOpt.intNull = 0;
+    [pathLossDL,pathLossUL,bfGainRxDLdes, intraOpt] = applyBfGain(pathLoss', Icell, bfOpt);
     % Reduce BF gain if BS is reduced to single stream processing
     if (nstreamBS > 0)
         bfOpt.nstream = nstreamBS;
@@ -343,7 +343,8 @@ for idrop = 1 : ndrop
         opt.bwMHzTot = bwMHz;                                               % Total bandwidth in MHz
         opt.noisepow = chan.kT + 60 + 10*log10(bwMHz) + ueNoiseFig;         % for M antennas
         opt.rxBFgains = bfGainRxDLdes;                                      % Rx BF gains to the home BS
-        opt.alpha = alpha;              
+        opt.alpha = alpha;
+        opt.intraOpt = intraOpt;                                            % This is a Map with the UE index as the key
 
         
         % nultiple access based parameters
@@ -439,7 +440,17 @@ if ~exist('param','var')
         axis([1 1e4 0 1]);
         fprintf(1,'DL:  mean=%10.4e cell-edge=%10.4e \n', avgRateDL, edgeRateDL );
         
-        
+        figure(2)
+        sinrDL = sinrDL(:);
+        n = length(sinrDL);
+        p = (1:n)/n;
+        h = semilogx(sort(sinrDL),p,'-');
+        grid on; hold on;
+        set(h,'LineWidth',2);
+        set(gca,'FontSize',16);
+        xlabel('SINR (dB)');
+        ylabel('Cummulative prob');
+        %axis([1 1e4 0 1]);
         % for scheduled rate
         
         nsched = length(serviceDL);
@@ -448,10 +459,10 @@ if ~exist('param','var')
         serviceDL(serviceDL == 0) = 1e-8; % some conatant latency value; just for correct plots
         latency = serviceDL*1e3;
         
-        figure(2); 
+        figure(3); 
         semilogx(latency,prob,'-','Linewidth',2);
         grid on;
-        %axis([1e-2 1e3 0 1]);
+        axis([1e-2 1e3 0 1]);
         set(gca,'FontSize',16);
         %xlabel(' mean waiting time (ms) ');
         ylabel('Cummulative prob');

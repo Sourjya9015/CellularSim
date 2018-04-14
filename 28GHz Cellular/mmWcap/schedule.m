@@ -49,7 +49,7 @@ for sfnum = 1:numsf
         
         pktSz = traffic.getQueue(ueind);
         
-        if (isempty(pktSz~=0))
+        if (sum(pktSz~=0) == 0)
             continue;
         end
         
@@ -74,71 +74,68 @@ for sfnum = 1:numsf
             
         elseif (strcmpi(multiacs,'sdma') || strcmpi(multiacs,'tdma') )
             
-            Dlopt.ueSched = ueind;
-            Dlopt.bwSched = ones(length(Dlopt.ueSched),1)*bw; % assign total bandwidth
             Dlopt.powSplit = min(K, sum(pktSz~=0));           % Max number of beams in which the power is split
+
             
+            
+            if (Dlopt.powSplit < K)
+                % there are exactly n < K users with data in the cell
+                Dlopt.ueSched = ueind(pktSz~=0); % all the users are scheduled
+                pktSz = pktSz(pktSz~=0);
+            else
+                icnt = 1;
+                pkt = zeros(1,K);
+                while icnt <= K
+                    if (pktSz(nxtIndx) ~= 0)
+                        Dlopt.ueSched(icnt) = ueind(nxtIndx);
+                        pkt(icnt) = pktSz(nxtIndx);
+                        icnt = icnt + 1;
+                    end
+                    nxtIndx = (nxtIndx == nuebsi)*1 + (nxtIndx < nuebsi)*(nxtIndx+1);
+
+                end
+                pktSz = pkt;
+            end
+            
+            %Dlopt.ueSched = uetosched(schedIndex);
+            Dlopt.bwSched = ones(length(Dlopt.ueSched),1)*bw; % assign total bandwidth
+
             specEff = sinrObj.DlSinrCalcBSi(Dlopt);
             
             
-            numStreams = Dlopt.powSplit; % upper bounded by the number of users
             
-            ns = 1;
-            startIndex = nxtIndx;
-            flag = 0;
-
-            % schedule each stream
+            txData = min( pktSz, (eta*(specEff.*Dlopt.bwSched*1e6)*tti*1e-3)');
             
-            while (ns <= numStreams)
-                
-                % Prevents infinite loops when no data is available or
-                % number of streams available is very large
-                if (nxtIndx == startIndex)
-                    flag = flag + 1;
-                end
-                
-                if (flag > 1) 
-                    break; 
-                end
-                %------------------------------------------------------
-                
-                uei = Dlopt.ueSched(nxtIndx);
-                
-                pktSzi = pktSz(nxtIndx);
-                
-                if (pktSzi == 0)
-                    nxtIndx = (nxtIndx == nuebsi)*1 + (nxtIndx < nuebsi)*(nxtIndx+1);
-                    continue; % end the loop without increasing ns
-                end
-                seij = specEff(nxtIndx);
-                
-                txData = min( eta*(seij*Dlopt.bwSched(nxtIndx)*1e6)*tti*1e-3, pktSzi);
-                traffic.dequeue(txData, uei);
-                totDataTxue(uei) = totDataTxue(uei) + txData;
-                
-                nxtIndx = (nxtIndx == nuebsi)*1 + (nxtIndx < nuebsi)*(nxtIndx+1);
-                ns = ns+1;
-            end
-%             for schedInd = 1:numStreams
-%                 uei = ueind(nxtIndx);
-%                 seij = specEff(nxtIndx);
-%                 pkt = pktSz(nxtIndx);
+            traffic.dequeue(txData, Dlopt.ueSched);
+            
+            totDataTxue(Dlopt.ueSched) = totDataTxue(Dlopt.ueSched) + txData;
+            
+            
+%             numStreams = Dlopt.powSplit; % upper bounded by the number of users
+% 
+%             % schedule each stream
+%             for ns=1:numStreams
 %                 
-%                 dofReq = pktSz/seij;
-%                 if (dofReq > availDof)
-%                     txData = availDof*seij;
-%                 else
-%                     txData = pktSz;
+%                 uei = Dlopt.ueSched(ns);
+%                 
+%                 pktSzi = pktSz(ns);
+%                 
+%                 if (pktSzi == 0)
+%                     error('Programming error; debug code');
+%                     % should not come here
+%                     % end the loop without increasing ns
 %                 end
+%                 seij = specEff(ns);
 %                 
+%                 txData = min( eta*(seij*Dlopt.bwSched(ns)*1e6)*tti*1e-3, pktSzi);
 %                 traffic.dequeue(txData, uei);
 %                 totDataTxue(uei) = totDataTxue(uei) + txData;
-%                 %Update the next UE index to be scheduled
-%                 nxtIndx = (nxtIndx == nuebsi)*1 + (nxtIndx < nuebsi)*(nxtIndx+1);
-%                 if (startIndx == nxtIndx) 
-%                     break; % exhausted all set of users. When K > Nue
-%                 end
+% 
 %             end
+%             
+%             lstServed = find(ueind == uetosched(schedIndex(end)));
+%             nxtIndx = (lstServed == nuebsi)*1 + (lstServed < nuebsi)*(lstServed+1);
+
         else
             error('Unknown/unsupported multiple access scheme');
         end

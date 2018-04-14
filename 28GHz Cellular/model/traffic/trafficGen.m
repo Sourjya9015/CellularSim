@@ -97,6 +97,11 @@ classdef trafficGen < hgsetget
         
         function genTraffic(obj, sfnum)
             
+            % Update the avarage queue length
+            % compute queue length here. Packets arriving now are
+            % served in the next SF at the earliest.
+            obj.cumQueueLen = obj.cumQueueLen+ obj.queues;
+            
             % Check, can this be vectorized?
             for usr=1:obj.nqueue
 
@@ -110,10 +115,7 @@ classdef trafficGen < hgsetget
                 end 
             end
             
-            % Update the avarage queue length
-            % compute queue length here. Packets arriving now are
-            % served in the next SF at the earliest.
-            obj.cumQueueLen = obj.cumQueueLen+ obj.queues;
+            
         end
 
         
