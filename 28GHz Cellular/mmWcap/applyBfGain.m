@@ -24,7 +24,7 @@ nantBS = size(QtxTot,2); % QtxTot -> Tx covariance matrix 64x64x1000
 ncov = size(QrxTot,3);
 Icov = randi(ncov,nbs,nue);
 
-bfOmniReject = 0; % in dB
+bfICIReject = 0; % in dB, How much should this be if any?
 
 % Generate random TX gains by selecting a random gain "interfering" gain
 % on the interfering links and a random "serving" gain on the serving
@@ -50,6 +50,8 @@ pathLossDL = pathLossUL';
 % No sense of interference cancellation due to directivity.
 if ~intNull
     
+    bfGainIntraTx = bfGainIntTx(Icov);
+    bfGainIntraRx = bfGainIntRx(Icov);
     % Omnidirectional intra-cell interference
     for iue = 1:nue
         ibs = Icell(iue);
@@ -57,9 +59,13 @@ if ~intNull
         pl = pathLoss(ibs,iue);
         BsUei = find(Icell == ibs); % array of index
         BsUei(BsUei == iue) = [];   % remove the current one from the index set
+        
+        intraTxBfGain = bfGainIntraTx(Icov(ibs, BsUei));
+        intraRxBfGain = bfGainIntraRx(Icov(ibs,iue));
 
         intraOpt.ueList = BsUei; % List of UEs in the current sell
-        icellIntf = ones(1,length(BsUei))*pl + bfOmniReject; % Constant Rejection due to beamforming
+        % Tx BF gain + a Constant Rejection due to receive beamforming
+        icellIntf = ones(1,length(BsUei))*pl - intraTxBfGain - intraRxBfGain + bfICIReject; 
         
         intraOpt.pathLoss = icellIntf;
         IntraCellIntf(num2str(iue)) = intraOpt;
@@ -129,7 +135,7 @@ for iue = 1:nue
     BsUei = find(Icell == ibs); % array of index
     BsUei(BsUei == iue) = []; % remove the current one from the index set
     
-    intraOpt.ueList = BsUei; % List of UEs in the current sell
+    intraOpt.ueList = BsUei; % List of UEs in the current cell
     pathLoss = ones(1,length(BsUei))*pl;
     
     intraBfGainRxDL = zeros(1,length(BsUei));
