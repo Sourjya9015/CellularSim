@@ -2,7 +2,7 @@ function [pathLossDL,pathLossUL,bfGainRxDLdes,IntraCellIntf] = applyBfGain(pathL
 
 % Get options
 intNull = bfOpt.intNull;
-covFn = bfOpt.covFn;
+covFn = bfOpt.covFn;        % Cov file name
 noisepow = bfOpt.noisepow;
 txpow = bfOpt.txpow;
 
@@ -18,11 +18,12 @@ bfGainRxDLdes = zeros(nue,1);
 % Generate random covariance matrices for each link
 % Loads the data from the chan/... data section. contains the Int (interference)
 % and Des (desired) beamforming gains. Taken from measurements.
-load(covFn);
+load(covFn); %load covData28_8x8x4x4.mat
 nantUE = size(QrxTot,1); % QrxTot -> Rx covariance matrix 16x16x1000
 nantBS = size(QtxTot,2); % QtxTot -> Tx covariance matrix 64x64x1000
 ncov = size(QrxTot,3);
-Icov = randi(ncov,nbs,nue);
+Icov = randi(ncov,nbs,nue); % random indices of the cov matrices 90 x 18000
+
 
 bfICIReject = 0; % in dB, How much should this be if any?
 
@@ -31,13 +32,13 @@ bfICIReject = 0; % in dB, How much should this be if any?
 % links.
 bfGainTxDL = bfGainIntTx(Icov); % Nbs x Nue
 bfGainRxDL = bfGainIntRx(Icov); % Nbs x Nue
+
 for iue = 1:nue
     ibs = Icell(iue);
     bfGainTxDL(ibs,iue) = bfGainDesTx(Icov(ibs,iue));
     bfGainRxDL(ibs,iue) = bfGainDesRx(Icov(ibs,iue));
     bfGainRxDLdes(iue,:) = bfGainRxDL(ibs,iue);
 end
-
 
 pathLossUL = pathLoss - bfGainTxDL - bfGainRxDL;
 pathLossDL = pathLossUL';
@@ -62,7 +63,17 @@ if ~intNull
         
         intraTxBfGain = bfGainIntraTx(Icov(ibs, BsUei));
         intraRxBfGain = bfGainIntraRx(Icov(ibs,iue));
-
+       
+        %nb:
+         intraTxBfGain = zeros(size(BsUei));
+         load TxBFVecs.mat
+         for iw = 1:length(BsUei)
+           jdx = BsUei(iw);
+           intraTxBfGain(iw) = ... 
+               10*log10( real(Wtx_opt1(:,jdx)'*QtxTot(:,:,iue)*Wtx_opt1(:,jdx)) * real(Wrx_opt1(:,iue)'*QrxTot(:,:,iue)*Wrx_opt1(:,iue))   /(nantUE*nantBS) );
+         end
+        
+        
         intraOpt.ueList = BsUei; % List of UEs in the current sell
         % Tx BF gain + a Constant Rejection due to receive beamforming
         icellIntf = ones(1,length(BsUei))*pl - intraTxBfGain - intraRxBfGain + bfICIReject; 
@@ -71,7 +82,7 @@ if ~intNull
         IntraCellIntf(num2str(iue)) = intraOpt;
     end
     
-    return;
+    %return;
 end
 
 % Downlink interference nulling
@@ -116,10 +127,13 @@ for iue = 1:nue
     % Compute the optimal BF vector    
     QrxInt2 = inv(sqrtm(QrxInt));
     Q = QrxInt2'*QrxDes*QrxInt2;
-    [wrx,d] = eigs(Q,1);
+    [wrx,d] = eigs(Q,1);        % wrx calc-ed over combined matrix
     wrx = wrx/norm(wrx);
     
+    
     % Compute the BF gain on the desired signal
+    [real(wrx'*QrxDes*wrx)  real(wrx'*QrxDes*wrx/nantBS); ...
+      10*log10( real(wrx'*QrxDes*wrx)) 10*log10( real(wrx'*QrxDes*wrx/nantBS)) ]
     bfGainRxDL(ibs,iue) = 10*log10( real(wrx'*QrxDes*wrx/nantBS));
 
     % Compute the BF gain on the dominant interfering links
