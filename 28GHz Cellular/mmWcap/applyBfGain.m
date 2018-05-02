@@ -48,21 +48,38 @@ pathLossDL = pathLossUL';
 
 % The code stops here is intf nulling is not enabled.
 % i.e all path losses are reduced by Tx+Rx BF gain.
-% No sense of interference cancellation due to directivity.
 if ~intNull
     
-    %bfGainIntraTx = bfGainIntTx(Icov);
-    %bfGainIntraRx = bfGainIntRx(Icov);
-    load data/TxBFVecs.mat
-    load data/RxBFVecs.mat
-    % Omnidirectional intra-cell interference
+    bfGainIntraTx = bfGainIntTx(Icov);
+    bfGainIntraRx = bfGainIntRx(Icov);
+    
+    if (~exist('data/TxBFVecs.mat','file') || ~exist('data/TxBFVecs.mat','file'))
+        ncov = size(QrxTot,3); 
+        Wtx_opt1 = zeros(size(QtxTot,1),ncov);
+        Wrx_opt1 = zeros(size(QrxTot,1),ncov);
+
+        % store it once and use it later across iterations
+        for j=1:ncov
+            % nb: eigs, at least in my Matlab version returns normalized eigenvecs.
+            % However, when calculating e.g., the Rx BF gains, need to normalize 
+            % the size of the *Tx* antenna array! 
+            [Wtx_opt1(:,j),~] = eigs(QtxTot(:,:,j),1);  % Maximum eigen vector
+            [Wrx_opt1(:,j),~] = eigs(QrxTot(:,:,j),1);       
+        end
+        save('data/TxBFVecs.mat','Wtx_opt1');
+        save('data/RxBFVecs.mat','Wrx_opt1'); 
+    else
+        load data/TxBFVecs.mat
+        load data/RxBFVecs.mat
+    end
+
+    % intra-cell interference
     for iue = 1:nue
         ibs = Icell(iue);
         
         pl = pathLoss(ibs,iue);
         BsUei = find(Icell == ibs); % array of index
         BsUei(BsUei == iue) = [];   % remove the current one from the index set
-        
         %intraTxBfGain = bfGainIntraTx(Icov(ibs, BsUei));
         %intraRxBfGain = bfGainIntraRx(Icov(ibs,iue));
        
@@ -79,12 +96,12 @@ if ~intNull
            intraRxBfGain(iw) = ...
                10*log10( real(Wrx_opt1(:,Icov(ibs,iue))'*QrxTot(:,:,Icov(ibs,iue))* Wrx_opt1(:,Icov(ibs,iue)))...
                / ( (norm(Wrx_opt1(:,Icov(ibs,iue)))^2)*nantBS) );
-         end
-        
+         end        
         
         intraOpt.ueList = BsUei; % List of UEs in the current sell
         % Tx BF gain + a Constant Rejection due to receive beamforming
         icellIntf = ones(length(BsUei),1)*pl - intraTxBfGain - intraRxBfGain + bfICIReject; 
+
         
         intraOpt.pathLoss = icellIntf;
         IntraCellIntf(num2str(iue)) = intraOpt;
@@ -141,7 +158,7 @@ for iue = 1:nue
     
     % Compute the BF gain on the desired signal
     [real(wrx'*QrxDes*wrx)  real(wrx'*QrxDes*wrx/nantBS); ...
-      10*log10( real(wrx'*QrxDes*wrx)) 10*log10( real(wrx'*QrxDes*wrx/nantBS)) ]
+      10*log10( real(wrx'*QrxDes*wrx)) 10*log10( real(wrx'*QrxDes*wrx/nantBS)) ];
     bfGainRxDL(ibs,iue) = 10*log10( real(wrx'*QrxDes*wrx/nantBS));
 
     % Compute the BF gain on the dominant interfering links

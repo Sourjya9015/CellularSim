@@ -96,8 +96,10 @@ classdef DLSinrCalc
                     obj.intraPow(num2str(iue)) = intraCellInfo;
                     
                     intraCellin = 10.^(0.1*intraCellInfo.intrfpow);
+                    
+                    intraCellin = sort(intraCellin);
 
-                    intraIntfPow(iue) = mean(intraCellin) * (kstreams-1); % in an average sense
+                    intraIntfPow(iue) = sum(intraCellin(1:kstreams-1)); % in an average sense
                     % One of the K streams are Tx towards the UE.
                 end
             end
@@ -128,9 +130,9 @@ classdef DLSinrCalc
                 noisepow = repmat(noisepow,nue,1);
             end
                
-            if(strcmpi(multiacc,'fdma'))
-                noisepow = noisepow - 10*log10(obj.bwMHzTot) + 10*log10(obj.bwMHz);
-            end
+%             if(strcmpi(multiacc,'fdma'))
+%                 noisepow = noisepow - 10*log10(obj.bwMHzTot) + 10*log10(obj.bwMHz);
+%             end
             
             % SINR & INR calculation
             noisepow = 10.^(0.1*noisepow);
@@ -146,10 +148,10 @@ classdef DLSinrCalc
             obj.pnoise = noisepow;
             obj.pintrfr = totPow - sigpow - noisepow - intraIntfPow; % The inter Cell Intf only
             
-            if (strcmpi(multiacc,'fdma'))
-                % consider only in-band interference
-                obj.pintrfr = obj.pintrfr.*obj.bwMHz/obj.bwMHzTot;
-            end
+%             if (strcmpi(multiacc,'fdma'))
+%                 % consider only in-band interference
+%                 obj.pintrfr = obj.pintrfr.*obj.bwMHz/obj.bwMHzTot;
+%             end
             
             iplusn = 10*log10(noisepow + obj.pintrfr + intraIntfPow);  % interference and noise
            

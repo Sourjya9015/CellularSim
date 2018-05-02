@@ -1,5 +1,5 @@
 % Uplink and Downlink capacity simulation
-clc;
+%clc;
 % Set path to contain all the subdirectories of NetSim
 addpath(genpath('..'));
 
@@ -12,7 +12,7 @@ devName = 'lte-dev';        % name for all the LTE network devices
 picoTxPow = 35;     % Pico TX power in dBm
 ueTxPow = 20;       % UE TX power in dBm
 picoNoiseFig = 5;   % Pico noise figure
-ueNoiseFig = 10;     % UE Total (accross all Nrx antennas)noise figure
+ueNoiseFig = 8;     % UE Total (accross all Nrx antennas)noise figure
 nantBS = 64;        % num antennas at the BS
 nantUE = 16;        % num antennas at the UE
 fcMHz = 28e3;       % carrier freq in MHz
@@ -22,8 +22,12 @@ bwMHz = 1000;       % Total bandwidth in MHz
 picoHex = true;     % Picocells sectorized with hex layout
 nsectPico = 3;      % num pico sectors in hex layout
 multacs = 'fdma';   % FDMA / TDMA flag
-multacsDL = 'fdma'; % TDMA/FDMA/SDMA
-bsNumStreams = 1;   % num of streams; equal to the num of RF streams
+
+if (~exist('multacsDL','var') && ~exist('bsNumStreams','var'))
+    multacsDL = 'fdma'; % TDMA/FDMA/SDMA
+    bsNumStreams = 1;   % num of streams; equal to the num of RF streams
+end
+
 ndrop = 1;          % number of drops
 calcUL = false;     % calculate UL capacity
 calcDL = true;      % calculate DL capacity
@@ -42,9 +46,9 @@ pedge = 0.05;       % cell-edge percentage = 5
 dutyCycle = 0.5;    % 50 percent is for DL
 overhead = 0.2;     % 20 percent overhead
 
-nbits = 0;          % quantization bits
-%[~,alpha,~] = unifQuant(nbits);
-alpha = 0;
+nbits = 4;          % quantization bits
+[~,alpha,~] = unifQuant(nbits);
+%alpha = 0;
 
 % Process parameters for batch if a parameter string was supplied
 if exist('param0', 'var')
@@ -272,9 +276,9 @@ tti = (1/8)*1e-3; % in seconds
 nsf = 1000;
 trafficTime = tti*nsf;
 % Set traffic parameters
-trafficOpt.lambda = [200   20   2] ; % packets/sec
+trafficOpt.lambda = [1e3   1e2   2] ; % packets/sec
 trafficOpt.size   = [100   1e4  1e9];  % mean size in Bytes
-trafficOpt.frac   = [0.2   0.3  0.5];  % fraction of users in each traffic group
+trafficOpt.frac   = [0.5   0.4  0.1];  % fraction of users in each traffic group
 trafficOpt.nqueue = nue;
 trafficOpt.tti = tti; % 1/8 ms, check 3GPP spec for this, 1ms SF split into 8 slots
 trafficOpt.totTime = trafficTime; % in second(s)
@@ -454,17 +458,17 @@ if ~exist('param','var')
         % for scheduled rate
         
         nsched = length(serviceDL);
-        prob = (1:nsched)/nsched;
+        probLat = (1:nsched)/nsched;
 
         serviceDL(serviceDL == 0) = 1e-8; % some conatant latency value; just for correct plots
         latency = serviceDL*1e3;
         
-        figure(3); 
-        semilogx(latency,prob,'-','Linewidth',2);
+        figure(3);         
+        semilogx(latency,probLat, '-', 'Linewidth',2);
         grid on;
-        axis([1e-2 1e3 0 1]);
+        axis([1e-4 1e2 0.5 1]);
         set(gca,'FontSize',16);
-        %xlabel(' mean waiting time (ms) ');
+        xlabel('Avg. waiting time (ms)');
         ylabel('Cummulative prob');
         hold on;
         %title('Service with RR Scheduler');
@@ -473,6 +477,6 @@ if ~exist('param','var')
     
 end
 
-
+clear multacsDL bsNumStreams
 
 
