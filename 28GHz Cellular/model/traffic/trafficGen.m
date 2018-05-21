@@ -82,7 +82,7 @@ classdef trafficGen < hgsetget
         
         function dequeue(obj,nbits,ind)
             
-            if (sum(ind > obj.nqueue) > 0)
+            if (max(ind) > obj.nqueue)
                error('Index out of bound for traffic queue'); 
             end
             
@@ -111,7 +111,7 @@ classdef trafficGen < hgsetget
                     pktSz = exprnd(muPkt);  % exponentially distributed packet sizes
                     obj.totDat(usr) = obj.totDat(usr) + pktSz;
                     
-                    obj.queues(usr) = obj.queues(usr)+ pktSz;
+                    obj.queues(usr) = obj.queues(usr) + pktSz;
                 end 
             end
             

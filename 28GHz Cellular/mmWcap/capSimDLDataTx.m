@@ -24,8 +24,8 @@ nsectPico = 3;      % num pico sectors in hex layout
 multacs = 'fdma';   % FDMA / TDMA flag
 
 if (~exist('multacsDL','var') && ~exist('bsNumStreams','var'))
-    multacsDL = 'fdma'; % TDMA/FDMA/SDMA
-    bsNumStreams = 1;   % num of streams; equal to the num of RF streams
+    multacsDL = 'sdma'; % TDMA/FDMA/SDMA
+    bsNumStreams = 2;   % num of streams; equal to the num of RF streams
 end
 
 ndrop = 1;          % number of drops
@@ -43,12 +43,12 @@ speedoflight = 0.3; % Gm/s
 intNull = false;    % enable interference nulling
 
 pedge = 0.05;       % cell-edge percentage = 5
-dutyCycle = 0.5;    % 50 percent is for DL
-overhead = 0.2;     % 20 percent overhead
+dutyCycle = 1;    % 50 percent is for DL
+overhead = 0.1;     % 20 percent overhead
 
-nbits = 4;          % quantization bits
-[~,alpha,~] = unifQuant(nbits);
-%alpha = 0;
+%nbits = 0;          % quantization bits
+%[~,alpha,~] = unifQuant(nbits);
+alpha = 0;
 
 % Process parameters for batch if a parameter string was supplied
 if exist('param0', 'var')
@@ -276,14 +276,26 @@ tti = (1/8)*1e-3; % in seconds
 nsf = 1000;
 trafficTime = tti*nsf;
 % Set traffic parameters
-trafficOpt.lambda = [1e3   1e2   2] ; % packets/sec
-trafficOpt.size   = [100   1e4  1e9];  % mean size in Bytes
-trafficOpt.frac   = [0.5   0.4  0.1];  % fraction of users in each traffic group
+trafficOpt.lambda = 5 ; % packets/sec
+trafficOpt.size   = 2e9;  % mean size in Bytes
+trafficOpt.frac   = 1;  % fraction of users in each traffic group
 trafficOpt.nqueue = nue;
 trafficOpt.tti = tti; % 1/8 ms, check 3GPP spec for this, 1ms SF split into 8 slots
 trafficOpt.totTime = trafficTime; % in second(s)
 
 trafficHandle = trafficGen(trafficOpt);
+
+
+schedOpts.nStream = bsNumStreams;
+schedOpts.multiAccess = multacsDL;
+schedOpts.numSF = nsf;
+schedOpts.bwMHz = bwMHz;
+schedOpts.eta = dutyCycle * (1 - overhead);
+schedOpts.nBS = npico;
+schedOpts.ttims = tti*1e3;
+
+sched = scheduler(schedOpts);
+sched.setTrafficModel(trafficHandle);
 
 for idrop = 1 : ndrop
     fprintf(1,'Drop %d of %d\n', idrop, ndrop);
@@ -296,6 +308,8 @@ for idrop = 1 : ndrop
     % pathLoss -> nbsxnue  matrix tabling the pathloss between each UE-BS pair. 
     % Icell    -> 1xnue    vector recording BS each UE is associated to. 
     % txpowDL  -> 1xnbs    DL Tx power of BSs.
+    
+    sched.setCellAllocation(Icell);
     
     % Apply the BF gain -- assuming all links have a spatial structure as
     % the NLOS channel
@@ -362,17 +376,21 @@ for idrop = 1 : ndrop
         inrDL = dlSinrCalc.inr;
         seDL = dlSinrCalc.specEff;
         
+        sched.setSINRModel(dlSinrCalc);
+        
         % Do scheduler/traffic generator
         % Add quantized SNR
-        schedOpt.multiacs = multacsDL;
-        schedOpt.numstreams = bsNumStreams;
-        schedOpt.nsf = nsf;   % number fo SFs
-        schedOpt.bw  = bwMHz; % in MHz
-        schedOpt.eta = dutyCycle*(1-overhead);
+        % schedOpt.multiacs = multacsDL;
+        % schedOpt.numstreams = bsNumStreams;
+        % schedOpt.nsf = nsf;   % number fo SFs
+        % schedOpt.bw  = bwMHz; % in MHz
+        % schedOpt.eta = dutyCycle*(1-overhead);
         
-        schedOut = schedule( npico, Icell, dlSinrCalc, trafficHandle, schedOpt);
+        %schedOut = schedule( npico, Icell, dlSinrCalc, trafficHandle, schedOpt);
         
-        schedRateDL = [schedRateDL, schedOut.rate];
+        schedOut = sched.schedule();
+        
+        schedRateDL = [schedRateDL, schedOut.fullBuffRate];
         serviceDL = [serviceDL, schedOut.avgWait];
         
         %nb
@@ -432,9 +450,9 @@ if ~exist('param','var')
         end
         %rateTotDL = sort(rateDLs(:));
         figure (1);
-        n = length(rateTotDL);
+        n = length(schedRateDL);
         p = (1:n)/n;
-        h = semilogx(sort(rateTotDL),p,'-');
+        h = semilogx(sort(schedRateDL),p,'-');
         grid on;
         set(h,'LineWidth',2);
         set(gca,'FontSize',16);
@@ -448,7 +466,7 @@ if ~exist('param','var')
         sinrDL = sinrDL(:);
         n = length(sinrDL);
         p = (1:n)/n;
-        h = semilogx(sort(sinrDL),p,'-');
+        h = plot(10*log10(sort(sinrDL)),p,'-');
         grid on; hold on;
         set(h,'LineWidth',2);
         set(gca,'FontSize',16);
@@ -465,17 +483,22 @@ if ~exist('param','var')
         
         figure(3);         
         semilogx(latency,probLat, '-', 'Linewidth',2);
-        grid on;
-        axis([1e-4 1e2 0.5 1]);
+        grid on; hold on;
+        axis([1e-4 1e3 0 1]);
         set(gca,'FontSize',16);
         xlabel('Avg. waiting time (ms)');
         ylabel('Cummulative prob');
-        hold on;
         %title('Service with RR Scheduler');
 
     end
     
 end
+
+[p,c] = sched.getSchedulingDist();
+
+figure(4);
+bar(c,p);
+xlabel('Num UE scheduled'); ylabel('Prob.');
 
 clear multacsDL bsNumStreams
 

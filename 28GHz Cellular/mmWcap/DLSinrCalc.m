@@ -92,10 +92,10 @@ classdef DLSinrCalc
                     txPower = txpow(Icell(iue));
                     intraCellIntf = intraPL(num2str(iue));
                     intraCellInfo.ueList = intraCellIntf.ueList;
-                    intraCellInfo.intrfpow = txPower - intraCellIntf.pathLoss;
+                    intraCellInfo.intrfpow = (txPower + 10*log10(kstreams)) - intraCellIntf.pathLoss;
                     obj.intraPow(num2str(iue)) = intraCellInfo;
                     
-                    intraCellin = 10.^(0.1*intraCellInfo.intrfpow);
+                    intraCellin = 10.^(0.1*(txPower - intraCellIntf.pathLoss));
                     
                     intraCellin = sort(intraCellin);
 
@@ -129,10 +129,6 @@ classdef DLSinrCalc
             if(length(noisepow) == 1)
                 noisepow = repmat(noisepow,nue,1);
             end
-               
-%             if(strcmpi(multiacc,'fdma'))
-%                 noisepow = noisepow - 10*log10(obj.bwMHzTot) + 10*log10(obj.bwMHz);
-%             end
             
             % SINR & INR calculation
             noisepow = 10.^(0.1*noisepow);
@@ -147,29 +143,31 @@ classdef DLSinrCalc
             obj.psign = sigpow;
             obj.pnoise = noisepow;
             obj.pintrfr = totPow - sigpow - noisepow - intraIntfPow; % The inter Cell Intf only
-            
-%             if (strcmpi(multiacc,'fdma'))
-%                 % consider only in-band interference
-%                 obj.pintrfr = obj.pintrfr.*obj.bwMHz/obj.bwMHzTot;
-%             end
-            
+
             iplusn = 10*log10(noisepow + obj.pintrfr + intraIntfPow);  % interference and noise
            
             %nb : calculate the quantized SINR
             obj.alpha = opt.alpha;
             obj.rxBFgains = opt.rxBFgains;
             gamma = 10.^(0.1*(sigPowdB - iplusn));              % pre-quantization SINR (lin)
-            gamma_sansRxBF = gamma ./ (10.^(0.1*obj.rxBFgains));            
-            gamma_q = ((1 - obj.alpha)*gamma)./(1 + obj.alpha*gamma_sansRxBF);       % SINR after quantization
-            obj.sinr = 10*log10(gamma_q);
-            obj.inr = 10*log10(totPow - sigpow - noisepow) - 10*log10(noisepow); % interference to noise ratio
-            %debug:
-            %[10*log10(gamma) 10*log10(gamma_q) obj.rxBFgains]
             
-            %nb:
-            
+            % compute the post quantization SINR
+            if (obj.alpha > 0)
+                n0 = noisepow + obj.pintrfr;
+                g0 = sigPowdB - n0;
+                gj = intraIntfPow - n0;
                 
-                       
+                g0_preBF = g0 ./ (10.^(0.1*obj.rxBFgains));   
+                gj_preBF = gj ./ (10.^(0.1*obj.rxBFgains));  
+                
+                gamma = ( (1 - obj.alpha)*g0 )./(1 + (1-obj.alpha)*gj+ obj.alpha*(g0_preBF + gj_preBF));       % SINR after quantization
+            
+            end
+            
+            obj.sinr = 10*log10(gamma);
+            obj.inr = 10*log10(totPow - sigpow - noisepow) - 10*log10(noisepow); % interference to noise ratio
+
+            %nb:           
             beta = 10^(-0.1*obj.sirLossdB);
             se = log2(1 + beta*(10.^(0.1*(obj.sinr)))); % spectral efficiency
             obj.specEff = se;
@@ -188,11 +186,11 @@ classdef DLSinrCalc
         
         function specEff = DlSinrCalcBSi (obj, opt) 
             
-            ueSched = opt.ueSched; % List of UEs scheduled in this instant
-            bwSched = opt.bwSched;    % a vector of bandwidth allocated to each user
+            ueSched = opt.ueSched;     % List of UEs scheduled in this instant
+            %bwSched = opt.bwSched;    % a vector of bandwidth allocated to each user
             splitK = opt.powSplit;
             
-            noisePow = obj.psdNoise + 10*log10(bwSched);
+            noisePow = obj.psdNoise + 10*log10(obj.bwMHzTot);
             
             % already store in Linear scale
             sigPow = obj.psign(ueSched);
@@ -213,32 +211,81 @@ classdef DLSinrCalc
                     othUsr(othUsr == ueSched(iue)) = [];
                     intraInfo = obj.intraPow(num2str(ueSched(iue)));
                     
+                    if isempty(intraInfo)
+                        error('Programming error: check how the map is accessed');
+                    end
+                    
                     [~,indx,~] = intersect(intraInfo.ueList, othUsr);
-                    intraIntf(iue) = sum(10.^(0.1*intraInfo.intrfpow(indx)));
+                    intraIntf(iue) = sum(10.^(0.1*(intraInfo.intrfpow(indx))))/splitK;
                     
                 end
                 
-            end
-            
-            if (~isempty(ueSched))
-                temp = 0;
-                temp = temp + 1;
             end
 
             intf = obj.pintrfr(ueSched);
             
             noisePow = 10.^(0.1*noisePow);
             % Intra Cell Intf in case of SDMA
-            
-            
+
             %nb:
-            gamma = sigPow./(intf + noisePow + intraIntf);
-            gamma_sansRxBF = gamma ./ (10.^(0.1*obj.rxBFgains(ueSched)));
-            Sinr = ((1 - obj.alpha)*gamma)./(1 + obj.alpha*gamma_sansRxBF); % Sinr after quantization
+            gamma_0 = sigPow./(intf + noisePow );
+            gamma_ici = intraIntf./(intf + noisePow);
+            gamma_0sansRxBF = gamma_0 ./ (10.^(0.1*obj.rxBFgains(ueSched)));
+            gamma_icisansRxBF = gamma_ici ./ (10.^(0.1*obj.rxBFgains(ueSched)));
+            % Sinr after quantization with intra cell and rx beamforming
+            Sinr = ((1 - obj.alpha)*gamma_0)./(1 +  (1-obj.alpha)*gamma_ici + obj.alpha*(gamma_0sansRxBF + gamma_icisansRxBF)); 
             
             beta = 10^(-0.1*obj.sirLossdB);
-            specEff = log2(1 + beta*(10.^(0.1*(Sinr))));
+            specEff = log2(1 + beta*Sinr);
             specEff = min(specEff, obj.maxSe);
+        end
+        
+        % Used for scheduling to get a metric for the channel quality.
+        function [se, gamma] = computeSingleLinkCapacity (obj, ueList)
+            
+            noisePow = obj.psdNoise + 10*log10(obj.bwMHzTot);   %  +60 is included in the main script
+            noisePow = 10.^(0.1*noisePow); % linear scale
+            
+            sigPow = obj.psign(ueList)*obj.maxStreams;
+            
+            intf = obj.pintrfr(ueList);
+            
+            % take care of quantization penalty
+            gamma = sigPow./(intf + noisePow); % returns the SINR without quantization
+            gamma_preRx = gamma ./ (10.^(0.1*obj.rxBFgains(ueList)));
+            Sinr = ((1 - obj.alpha)*gamma)./(1 + obj.alpha*gamma_preRx);
+            
+            beta = 10^(-0.1*obj.sirLossdB);
+            se = log2(1 + beta*Sinr);
+            se = min(se, obj.maxSe);
+            % se in bits/sec/Hz, gamma in linear scale
+        end
+        
+        function gammaj = getIntracellInterference (obj, victim, aggressors)
+            % returns (P*BF_Gain)/(N0 + Z0) for all UEs in the same cell a the
+            % victim UE. The full power is  multiplied and needs to be modified by
+            % P/K during scheduling when the total number of simultaneous
+            % non-othogonal transmissions are decided. Full bandwidth
+            % allocation is assumed for each user.
+            
+            if (isempty(obj.intraPow))
+                error('Programming error: Interference power not calculated');
+            end
+            intraInfo = obj.intraPow(num2str(victim));
+            
+            
+            % the UE list should have all the aggressors; the reverse case
+            % need not always hold.
+            [~,indxa, indxb] = intersect (intraInfo.ueList, aggressors);
+            
+            iciPow = zeros(1,length(aggressors));
+            iciPow(indxb) = intraInfo.intrfpow(indxa); % arranged in order
+            
+            % convert the received Intra-Cell Intf powers to ICI SINRs
+            gammaj = 10.^(0.1*iciPow)/(obj.pnoise(victim) + obj.pintrfr(victim));
+            gammaj = 10*log10(gammaj);
+            % returns in dB
+            
         end
         
     end

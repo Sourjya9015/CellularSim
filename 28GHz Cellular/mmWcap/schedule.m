@@ -76,8 +76,6 @@ for sfnum = 1:numsf
             
             Dlopt.powSplit = min(K, sum(pktSz~=0));           % Max number of beams in which the power is split
 
-            
-            
             if (Dlopt.powSplit < K)
                 % there are exactly n < K users with data in the cell
                 Dlopt.ueSched = ueind(pktSz~=0); % all the users are scheduled
