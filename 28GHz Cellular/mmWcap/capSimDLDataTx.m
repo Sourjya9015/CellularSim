@@ -46,9 +46,12 @@ pedge = 0.05;       % cell-edge percentage = 5
 dutyCycle = 1;    % 50 percent is for DL
 overhead = 0.1;     % 20 percent overhead
 
-%nbits = 0;          % quantization bits
-%[~,alpha,~] = unifQuant(nbits);
-alpha = 0;
+nbits = 0;          % quantization bits
+if (nbits > 0)
+    [~,alpha,~] = unifQuant(nbits);
+else
+    alpha = 0;
+end
 
 % Process parameters for batch if a parameter string was supplied
 if exist('param0', 'var')

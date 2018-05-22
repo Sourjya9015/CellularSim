@@ -20,6 +20,11 @@ classdef trafficGen < hgsetget
         
         tti;      % transmission time intervals
         
+        
+    end
+    
+    properties
+        fullBuffer = 1;
     end
     
     methods
@@ -103,16 +108,22 @@ classdef trafficGen < hgsetget
             obj.cumQueueLen = obj.cumQueueLen+ obj.queues;
             
             % Check, can this be vectorized?
-            for usr=1:obj.nqueue
+            if(obj.fullBuffer)
+                obj.queues = ones(1,length(obj.queues))*10e9;
+                
+                obj.totDat = ones(1,length(obj.queues))*10e9; % not a meaningful quantity
+            else
+                for usr=1:obj.nqueue
 
-                if(obj.arrivals(usr).T(sfnum) == true)
-                    muPkt = obj.pktsize(obj.arrivals(usr).type);
-                    
-                    pktSz = exprnd(muPkt);  % exponentially distributed packet sizes
-                    obj.totDat(usr) = obj.totDat(usr) + pktSz;
-                    
-                    obj.queues(usr) = obj.queues(usr) + pktSz;
-                end 
+                    if(obj.arrivals(usr).T(sfnum) == true)
+                        muPkt = obj.pktsize(obj.arrivals(usr).type);
+
+                        pktSz = exprnd(muPkt);  % exponentially distributed packet sizes
+                        obj.totDat(usr) = obj.totDat(usr) + pktSz;
+
+                        obj.queues(usr) = obj.queues(usr) + pktSz;
+                    end 
+                end
             end
             
             

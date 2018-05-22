@@ -154,8 +154,8 @@ classdef DLSinrCalc
             % compute the post quantization SINR
             if (obj.alpha > 0)
                 n0 = noisepow + obj.pintrfr;
-                g0 = sigPowdB - n0;
-                gj = intraIntfPow - n0;
+                g0 = sigpow ./ n0;
+                gj = intraIntfPow ./ n0;
                 
                 g0_preBF = g0 ./ (10.^(0.1*obj.rxBFgains));   
                 gj_preBF = gj ./ (10.^(0.1*obj.rxBFgains));  
