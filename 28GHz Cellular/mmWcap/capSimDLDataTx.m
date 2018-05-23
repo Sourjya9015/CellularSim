@@ -5,7 +5,7 @@ addpath(genpath('..'));
 
 % Parameters
 picoRadius = 100;  % cell radius for picocells
-nuePerPico = 20;   % num ues per macro sector
+nuePerPico = 10;   % num ues per macro sector
 posLim0 = [1000 1000]';     % area for region in meters
 chanIfName = 'lte-chan-if'; % name for all the channel interfaces
 devName = 'lte-dev';        % name for all the LTE network devices
@@ -25,7 +25,7 @@ multacs = 'fdma';   % FDMA / TDMA flag
 
 if (~exist('multacsDL','var') && ~exist('bsNumStreams','var'))
     multacsDL = 'sdma'; % TDMA/FDMA/SDMA
-    bsNumStreams = 2;   % num of streams; equal to the num of RF streams
+    bsNumStreams = 4;   % num of streams; equal to the num of RF streams
 end
 
 ndrop = 1;          % number of drops
@@ -44,7 +44,7 @@ intNull = false;    % enable interference nulling
 
 pedge = 0.05;       % cell-edge percentage = 5
 dutyCycle = 1;    % 50 percent is for DL
-overhead = 0.1;     % 20 percent overhead
+overhead = 0.2;     % 20 percent overhead
 
 nbits = 0;          % quantization bits
 if (nbits > 0)
@@ -392,10 +392,9 @@ for idrop = 1 : ndrop
         %schedOut = schedule( npico, Icell, dlSinrCalc, trafficHandle, schedOpt);
         
         schedOut = sched.schedule();
-        
         schedRateDL = [schedRateDL, schedOut.fullBuffRate];
         serviceDL = [serviceDL, schedOut.avgWait];
-        
+        sinrSched = schedOut.sinr;
         %nb
         Ps(:,idrop) = dlSinrCalc.psign;
         N0(:,idrop) = dlSinrCalc.pnoise;
@@ -462,14 +461,15 @@ if ~exist('param','var')
         xlabel('Rate (Mbps)');
         ylabel('Cummulative prob');
         grid on; hold on;
-        axis([1 1e4 0 1]);
+        %axis([1 1e4 0 1]);
         fprintf(1,'DL:  mean=%10.4e cell-edge=%10.4e \n', avgRateDL, edgeRateDL );
         
+        
         figure(2)
-        sinrDL = sinrDL(:);
-        n = length(sinrDL);
+        sinrSched = sinrSched(:);
+        n = length(sinrSched);
         p = (1:n)/n;
-        h = plot(10*log10(sort(sinrDL)),p,'-');
+        h = plot(10*log10(sort(sinrSched)),p,'-');
         grid on; hold on;
         set(h,'LineWidth',2);
         set(gca,'FontSize',16);

@@ -45,31 +45,29 @@ classdef DLSinrCalc
             Icell = opt.Icell;            % Icell(j) = RX index for TX i
             [nue,nbs] = size(opt.pathLoss); % Dimensions
             
-            intraPL = opt.intraOpt;    % Only needed for SDMA systems; 
-            % No intra-cell intrefernce when orthogonal Tx is used, i.e
-            % (TDMA/OFDMA)
+            if (isfield(opt, 'intraOpt'))
+                intraPL = opt.intraOpt;    % Only needed for SDMA systems; 
+            else
+                intraPL = 0;
+            end
+            
             
             multiacc = 'tdma'; % default
-            kstreams = 1; % default
+            kstreams = 1;      % default
             if nargin == 2
-                multiacc = multiacsOpt.multiacs;
-                
+                multiacc = multiacsOpt.multiacs;   
             end
 
             txpow = txpow(:)';
-
-            
             % Tx power divided into K streams for SDMA
             if (strcmpi(multiacc,'sdma'))
-                %disp('sdma transmission!');
                 kstreams = multiacsOpt.K;
-                txpow = txpow - 10*log10(kstreams);
-
-                obj.maxStreams = kstreams;
                 if (kstreams <= 0)
                    error('Invalid value in  DLSinrCalc: multiacsOpt.K <= 0');
                 end
                 
+                txpow = txpow - 10*log10(kstreams);
+                obj.maxStreams = kstreams;
             end
             
             p = repmat(txpow,nue,1) - pathLoss;
@@ -87,24 +85,27 @@ classdef DLSinrCalc
             for iue = 1 : nue
                 obj.nueBS(Icell(iue)) = obj.nueBS(Icell(iue)) + 1;
                 
-                % for SDMA
+                % for SDMA: compute the intra cell interference powers
                 if (strcmpi(multiacc,'sdma'))
+                    
                     txPower = txpow(Icell(iue));
+                    
                     intraCellIntf = intraPL(num2str(iue));
                     intraCellInfo.ueList = intraCellIntf.ueList;
                     intraCellInfo.intrfpow = (txPower + 10*log10(kstreams)) - intraCellIntf.pathLoss;
                     obj.intraPow(num2str(iue)) = intraCellInfo;
                     
                     intraCellin = 10.^(0.1*(txPower - intraCellIntf.pathLoss));
-                    
                     intraCellin = sort(intraCellin);
-
-                    intraIntfPow(iue) = sum(intraCellin(1:kstreams-1)); % in an average sense
+                    
+                    if length(intraCellin) < (kstreams-1)
+                        intraIntfPow(iue) = sum(intraCellin);
+                    else
+                        intraIntfPow(iue) = sum(intraCellin(1:kstreams-1)); % in the best case
+                    end
                     % One of the K streams are Tx towards the UE.
                 end
             end
-            
-            %intraIntfPow = 10*log10(intraIntfPow);
             
             k = 0;
             disabledTx = zeros(nbs,1);
@@ -115,7 +116,6 @@ classdef DLSinrCalc
                 end
             end
             disabledTx = disabledTx(1:k);
-            
             p(:,disabledTx) = 0;
             
             % rate calculation, Mbps/cell (@BW = obj.bwMHz)
@@ -135,20 +135,26 @@ classdef DLSinrCalc
             totPow = sum(p,2) + noisepow + intraIntfPow;
 
             sigPowdB = 10*log10(sigpow);
-            %iplusn = 10*log10(totPow - sigpow);  % interference and noise
-            
-            %obj.sinr = sigPowdB - iplusn;       % SINR
-            
+
             %powers in linear:
             obj.psign = sigpow;
             obj.pnoise = noisepow;
             obj.pintrfr = totPow - sigpow - noisepow - intraIntfPow; % The inter Cell Intf only
 
-            iplusn = 10*log10(noisepow + obj.pintrfr + intraIntfPow);  % interference and noise
+            iplusn = 10*log10(totPow - sigpow);  % intercell interference and noise
            
             %nb : calculate the quantized SINR
-            obj.alpha = opt.alpha;
-            obj.rxBFgains = opt.rxBFgains;
+            if (isfield(opt,'alpha'))
+                obj.alpha = opt.alpha;
+            else
+                obj.alpha = 0;
+            end
+            
+            if (isfield(opt,'rxBFgains'))
+                obj.rxBFgains = opt.rxBFgains;
+            end
+            
+            
             gamma = 10.^(0.1*(sigPowdB - iplusn));              % pre-quantization SINR (lin)
             
             % compute the post quantization SINR
@@ -184,7 +190,7 @@ classdef DLSinrCalc
         % the class. It will be called for any and every object
         % instantiation. The dependency is natural and useful.
         
-        function specEff = DlSinrCalcBSi (obj, opt) 
+        function [specEff, Sinr] = DlSinrCalcBSi (obj, opt) 
             
             ueSched = opt.ueSched;     % List of UEs scheduled in this instant
             %bwSched = opt.bwSched;    % a vector of bandwidth allocated to each user
@@ -216,10 +222,8 @@ classdef DLSinrCalc
                     end
                     
                     [~,indx,~] = intersect(intraInfo.ueList, othUsr);
-                    intraIntf(iue) = sum(10.^(0.1*(intraInfo.intrfpow(indx))))/splitK;
-                    
+                    intraIntf(iue) = sum( 10.^(0.1*(intraInfo.intrfpow(indx))) )/splitK;
                 end
-                
             end
 
             intf = obj.pintrfr(ueSched);

@@ -84,26 +84,24 @@ if ~intNull
         %intraRxBfGain = bfGainIntraRx(Icov(ibs,iue));
        
         %nb:
-         intraTxBfGain = zeros(size(BsUei));
-         intraRxBfGain = zeros(size(BsUei));
-         for iw = 1:length(BsUei)
-           jdx = BsUei(iw);
-           %testRxBFgain = bfGainRxDL(ibs,iue);
-           %testTxBFgain = bfGainTxDL(ibs,iue);
-           
-           % SD: Check the normalization here.
-           intraTxBfGain(iw) = 10*log10( ...
+        intraTxBfGain = zeros(size(BsUei));
+        intraRxBfGain = zeros(size(BsUei));
+        for iw = 1:length(BsUei)
+            jdx = BsUei(iw);
+
+            % SD: Check the normalization here.
+            intraTxBfGain(iw) = 10*log10( ...
                                         real(Wtx_opt1(:,Icov(ibs,jdx))'*QtxTot(:,:,Icov(ibs,iue))*Wtx_opt1(:,Icov(ibs,jdx)))...
                                         /((norm(Wtx_opt1(:,Icov(ibs,jdx)))^2) * nantUE)...
                                         );
-           intraRxBfGain(iw) = 10*log10( ...
-                                        real(Wrx_opt1(:,Icov(ibs,iue))'*QrxTot(:,:,Icov(ibs,iue))* Wrx_opt1(:,Icov(ibs,iue)))...
-                                         / ( (norm(Wrx_opt1(:,Icov(ibs,iue)))^2)*nantBS) ...
-                                         );
-         end        
+            intraRxBfGain(iw) = 10*log10( ...
+                                    real(Wrx_opt1(:,Icov(ibs,iue))'*QrxTot(:,:,Icov(ibs,iue))* Wrx_opt1(:,Icov(ibs,iue)))...
+                                     / ( (norm(Wrx_opt1(:,Icov(ibs,iue)))^2)*nantBS) ...
+                                     );
+        end        
         
         intraOpt.ueList = BsUei; % List of UEs in the current sell
-        % Tx BF gain + a Constant Rejection due to receive beamforming
+        
         icellIntf = ones(length(BsUei),1)*pl - intraTxBfGain - intraRxBfGain; 
 
         

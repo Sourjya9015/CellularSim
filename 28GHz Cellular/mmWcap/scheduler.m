@@ -28,6 +28,9 @@ classdef scheduler < hgsetget
         totDataTx;
         numUsrSched;
         fullBufferRate;
+        
+        sinrRecord;
+        schedCount;
     end
 
     methods (Access='public')
@@ -68,6 +71,8 @@ classdef scheduler < hgsetget
             obj.numUsrSched = zeros(obj.nBS, obj.numSF);
             
             obj.fullBufferRate = zeros(1, length(obj.Icell));
+            obj.sinrRecord = zeros(1, length(obj.Icell));
+            obj.schedCount = zeros(1, length(obj.Icell));
             
             for sfnum = 1:obj.numSF
                 
@@ -113,14 +118,18 @@ classdef scheduler < hgsetget
             waitTime(totDataQueue == 0) = [];
             obj.fullBufferRate(totDataQueue == 0) = [];
             totDataQueue(totDataQueue == 0) = [];
+            
+            obj.sinrRecord(obj.schedCount == 0) = [];
+            obj.sinrRecord = obj.sinrRecord./obj.schedCount;
 
 
-            schedOpt.rate = obj.totDataTx/(obj.numSF*obj.ttims*1e3);  % in Mbps
+            schedOpt.rate = obj.totDataTx/(obj.numSF*obj.ttims*1e3);  % in Mbps (1e-3*1e6 in the denom)
             schedOpt.service = obj.totDataTx./totDataQueue; % [0,1] --> how much was served
 
             schedOpt.avgQueueLen = Eq;
             schedOpt.avgWait = waitTime;
             schedOpt.fullBuffRate = obj.fullBufferRate/(obj.numSF*obj.ttims*1e3);
+            schedOpt.sinr = obj.sinrRecord; % in linear scale
         end
         
         function [p, c] = getSchedulingDist (obj)
@@ -144,9 +153,9 @@ classdef scheduler < hgsetget
         
         function schedTDMA (obj, ueList, sfnum, bsIndex)
             
-            se = obj.DLSinrObj.computeSingleLinkCapacity(ueList);
+            [se, sinr] = obj.DLSinrObj.computeSingleLinkCapacity(ueList);
             queueLen = obj.trafficObj.getQueue(ueList);
-            r = obj.thrHistory(ueList)/(sfnum*obj.ttims*1e-3);
+            r = obj.thrHistory(ueList)/((sfnum-1)*obj.ttims*1e-3);
             
             wt = (se').*(queueLen > 0)./r;       % Weight for scheduling
             
@@ -165,18 +174,23 @@ classdef scheduler < hgsetget
             
             obj.numUsrSched(bsIndex, sfnum) = 1;
             
+            obj.sinrRecord(ueList) = obj.sinrRecord(ueList) + sinr';
+            obj.schedCount(ueList) = obj.schedCount(ueList) + 1;
+            
         end
         
         function schedFDMA (obj, ueList, sfnum, bsIndex)
             
-            se = obj.DLSinrObj.computeSingleLinkCapacity(ueList);
+            [se, sinr] = obj.DLSinrObj.computeSingleLinkCapacity(ueList);
             queueLen = obj.trafficObj.getQueue(ueList);
+            obj.sinrRecord(ueList) = obj.sinrRecord(ueList) + sinr;
+            obj.schedCount(ueList) = obj.schedCount(ueList) + 1;
             
             ueList(queueLen == 0) = [];
             se(queueLen == 0) = [];
             queueLen(queueLen == 0) = [];
 
-            r = obj.thrHistory(ueList)/(sfnum*obj.ttims*1e-3);
+            r = obj.thrHistory(ueList)/((sfnum-1)*obj.ttims*1e-3);
             
             wt = (se').*(queueLen > 0)./r;       % Weight for scheduling
             
@@ -197,12 +211,16 @@ classdef scheduler < hgsetget
             
             obj.numUsrSched(bsIndex, sfnum) = length(ueList);
             
+            
+            
         end
         
         function schedSDMA (obj, ueList, sfnum, bsIndex)
             
             [se, snr] = obj.DLSinrObj.computeSingleLinkCapacity(ueList);
             queueLen = obj.trafficObj.getQueue(ueList);
+            
+            capPenalty = 0.5;
             
             % remove UEs with empty queues
             se = se'; % Make dimension consistant with the row-major-rest-of-the-code
@@ -211,25 +229,24 @@ classdef scheduler < hgsetget
             snr(queueLen == 0)      = [];
             queueLen(queueLen == 0) = [];
 
-            r = obj.thrHistory(ueList)/(sfnum*obj.ttims*1e-3);
+            r = obj.thrHistory(ueList)/((sfnum-1)*obj.ttims*1e-3);
             wt = se.*(queueLen > 0)./r;       % Weight for scheduling
             [~,ind] = sort(wt,'descend');
             
-            % for debug
-            temp = 0;
-            if(length(queueLen) > 10)
-                temp = temp +1;
-            end
-
             if (obj.sdmaICIReject == 1)
-                
-                gammN = 0.1;            % can tuning this lead to better performance?
+
                 ueSel = ueList(ind(1)); % primary UE scheduled based on best weight
                 gam0 = snr(ind(1));
+                
+                %gammN = 0.2;            % can tuning this lead to better performance?
+                pen = 1 - capPenalty;
+                gammN = 1/(2^(pen*se(ind(1))) - 1) - 1/gam0; % setting a threshold
 
                 aggresor = ueList(ind(2:end));
                 gammaj = obj.DLSinrObj.getIntracellInterference ( ueSel, aggresor);
-                [gammaj,indx] = sort(gammaj, 'ascend');
+                
+                %updateWt = wt(ind(2:end))./gammaj;
+                [~,indx] = sort(gammaj, 'ascend');
                 aggresor = aggresor(indx); % sorted in order
             
                 gammaj = 10.^(0.1*gammaj); % convert to linear
@@ -246,6 +263,32 @@ classdef scheduler < hgsetget
                 if (ueIndx > 0)
                     ueSel = [ueSel; aggresor(1:ueIndx)];   
                 end
+                
+            elseif (obj.sdmaICIReject == 2)
+                % chooses all the available spatial streams in ascending
+                % order of ICI induced. No stopping criteria based on SINR
+                % penalty.
+                
+                ueSel = ueList(ind(1));
+                
+                aggresor = ueList(ind(2:end));
+                gammaj = obj.DLSinrObj.getIntracellInterference ( ueSel, aggresor);
+                
+                [~,indx] = sort(gammaj, 'ascend');
+                aggresor = aggresor(indx);
+                
+                if (length(indx) < obj.nStreams-1)
+                    ueIndx = length(indx);
+                else
+                    ueIndx = obj.nStreams-1;
+                end
+                
+                if (ueIndx > 0)
+                    ueSel = [ueSel; aggresor(1:ueIndx)];   
+                end
+                
+                % does not give better performance for K > 2
+                
             else
                 %ueIndx = obj.nStreams - 1;
                 % take users according to the rate-fairness crteria
@@ -259,7 +302,7 @@ classdef scheduler < hgsetget
             opt.ueSched = ueSel;
             opt.powSplit = length(ueSel);
             
-            specEff = obj.DLSinrObj.DlSinrCalcBSi(opt);
+            [specEff, EffSinr] = obj.DLSinrObj.DlSinrCalcBSi(opt);
             
             cap = obj.eta*obj.bwMHz*(1e6).*(specEff'); % full bandwidth is allocated
             queueLen = obj.trafficObj.getQueue(ueSel);
@@ -268,12 +311,12 @@ classdef scheduler < hgsetget
             obj.fullBufferRate(ueSel) = obj.fullBufferRate(ueSel) + cap*obj.ttims*1e-3;
             
             obj.trafficObj.dequeue(txSize, ueSel);
-            
             obj.thrHistory(ueSel) = obj.thrHistory(ueSel) + txSize;
-            
             obj.totDataTx(ueSel) = obj.totDataTx(ueSel) + txSize;
-            
             obj.numUsrSched(bsIndex, sfnum) = length(ueSel);
+            
+            obj.sinrRecord(ueSel) = obj.sinrRecord(ueSel) + EffSinr'; % in linear scale
+            obj.schedCount(ueSel) = obj.schedCount(ueSel) + 1;
             
         end
         
