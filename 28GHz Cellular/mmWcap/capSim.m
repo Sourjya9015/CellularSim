@@ -22,7 +22,7 @@ bwMHz = 1000;       % Total bandwidth in MHz
 picoHex = true;     % Picocells sectorized with hex layout
 nsectPico = 3;      % num pico sectors in hex layout
 multacs = 'tdma';   % FDMA / TDMA flag
-ndrop = 3;          % number of drops
+ndrop = 1;          % number of drops
 calcUL = false;      % calculate UL capacity
 calcDL = true;      % calculate DL capacity
 plModType = 'hybrid';    % select either 'hybrid' or 'dist'
@@ -320,6 +320,8 @@ for idrop = 1 : ndrop
         opt.Icell = Icell;                                                  % Icell(j) = RX index for TX i
         opt.bwMHzTot = bwMHz;                                               % Total bandwidth in MHz
         opt.noisepow = chan.kT + 60 + 10*log10(bwMHz) + ueNoiseFig;         % for M antennas
+        
+        % Add params here to make CapSim consistant
         % noise power in dBm
         
         % Calculate rates

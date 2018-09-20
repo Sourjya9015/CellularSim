@@ -21,7 +21,3 @@ end
 
 save('data/TxBFVecs.mat','Wtx_opt1');
 save('data/RxBFVecs.mat','Wrx_opt1');
-
-
-
-

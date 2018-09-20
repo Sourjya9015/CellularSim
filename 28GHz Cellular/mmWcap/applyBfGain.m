@@ -1,4 +1,4 @@
-function [pathLossDL,pathLossUL,bfGainRxDLdes,IntraCellIntf] = applyBfGain(pathLoss, Icell, bfOpt)
+function [pathLossDL,pathLossUL,bfGainRxDLdes,IntraCellIntf, bfVecMap] = applyBfGain(pathLoss, Icell, bfOpt)
 
 % Get options
 intNull = bfOpt.intNull;
@@ -33,11 +33,15 @@ Icov = randi(ncov,nbs,nue); % random indices of the cov matrices 90 x 18000
 bfGainTxDL = bfGainIntTx(Icov); % Nbs x Nue
 bfGainRxDL = bfGainIntRx(Icov); % Nbs x Nue
 
+bfVecMap = zeros(1,nue); % store the bf vector indices
+
 for iue = 1:nue
     ibs = Icell(iue);
     bfGainTxDL(ibs,iue) = bfGainDesTx(Icov(ibs,iue));
     bfGainRxDL(ibs,iue) = bfGainDesRx(Icov(ibs,iue));
     bfGainRxDLdes(iue,:) = bfGainRxDL(ibs,iue);
+    
+    bfVecMap(iue) = Icov(ibs,iue);
 end
 
 pathLossUL = pathLoss - bfGainTxDL - bfGainRxDL;

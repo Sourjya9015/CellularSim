@@ -6,6 +6,7 @@ classdef scheduler < hgsetget
         
         multiAccess = 'tdma';
         nStreams = 1;
+        nquant = 1;     % nquant > 1 means the simulation will run for multiple values of 'alpha'
         numSF;  % num subframes being simulated
         bwMHz;  % bandwidth
         eta;    % overhead; due to control etc.
@@ -31,6 +32,7 @@ classdef scheduler < hgsetget
         
         sinrRecord;
         schedCount;
+        
     end
 
     methods (Access='public')
@@ -46,6 +48,7 @@ classdef scheduler < hgsetget
                 obj.nBS = opt.nBS;
                 %obj.Icell = opt.Icell;
                 obj.ttims = opt.ttims;
+                obj.nquant = opt.nquant;
             end
         end
         
@@ -63,22 +66,24 @@ classdef scheduler < hgsetget
         
         function schedOpt = schedule(obj)
             
-            obj.thrHistory = ones(1, length(obj.Icell))/length(obj.Icell); % Initialized to 1/Nue; 
+            obj.thrHistory = ones(obj.nquant, length(obj.Icell))/length(obj.Icell); % Initialized to 1/Nue; 
             % Do not initialize to 0 as that will lead to possible division
             % errors!
             
-            obj.totDataTx = zeros(1, length(obj.Icell));
+            obj.totDataTx = zeros(obj.nquant, length(obj.Icell));
             obj.numUsrSched = zeros(obj.nBS, obj.numSF);
             
-            obj.fullBufferRate = zeros(1, length(obj.Icell));
-            obj.sinrRecord = zeros(1, length(obj.Icell));
-            obj.schedCount = zeros(1, length(obj.Icell));
+            obj.fullBufferRate = zeros(obj.nquant, length(obj.Icell));
+            obj.sinrRecord = zeros(obj.nquant, length(obj.Icell));
+            obj.schedCount = zeros(1, length(obj.Icell)); % does not depepnd on quantiztion
+            
+            %cellMap = obj.Icell;
             
             for sfnum = 1:obj.numSF
                 
                 obj.trafficObj.genTraffic(sfnum);
                 
-                for bsi = 1:obj.nBS
+                parfor bsi = 1:obj.nBS
                     
                     ueind = find(obj.Icell == bsi); % indices of UEs attached to bs
 
@@ -99,7 +104,8 @@ classdef scheduler < hgsetget
                         obj.schedTDMA(ueind, sfnum, bsi);
 
                     elseif (strcmpi(obj.multiAccess,'sdma'))
-                        obj.schedSDMA(ueind, sfnum, bsi);
+                        obj.schedSDMA_xhstv(ueind, sfnum, bsi);
+                        %obj.schedSDMA(ueind, sfnum, bsi);
 
                     elseif (strcmpi(obj.multiAccess,'fdma'))
                         obj.schedFDMA(ueind, sfnum, bsi);
@@ -113,13 +119,15 @@ classdef scheduler < hgsetget
 
             [Eq, waitTime] = obj.trafficObj.calcAvgQueueLength(obj.numSF);
 
-            obj.totDataTx(totDataQueue == 0) = []; % do not consider these; no data were Txed for these UEs
-            Eq(totDataQueue == 0) = [];
-            waitTime(totDataQueue == 0) = [];
-            obj.fullBufferRate(totDataQueue == 0) = [];
-            totDataQueue(totDataQueue == 0) = [];
+            % obj.totDataTx(totDataQueue == 0) = []; % do not consider these; no data were Txed for these UEs
+            % Eq(totDataQueue == 0) = [];
+            % waitTime(totDataQueue == 0) = [];
+            % obj.fullBufferRate(totDataQueue == 0) = [];
+            % totDataQueue(totDataQueue == 0) = [];
+            % 
+            % obj.sinrRecord(obj.schedCount == 0) = [];
             
-            obj.sinrRecord(obj.schedCount == 0) = [];
+            
             obj.sinrRecord = obj.sinrRecord./obj.schedCount;
 
 
@@ -181,33 +189,38 @@ classdef scheduler < hgsetget
         
         function schedFDMA (obj, ueList, sfnum, bsIndex)
             
-            [se, sinr] = obj.DLSinrObj.computeSingleLinkCapacity(ueList);
+            [se, sinr] = obj.DLSinrObj.computeSingleLinkCapacity(ueList, 1);
             queueLen = obj.trafficObj.getQueue(ueList);
-            obj.sinrRecord(ueList) = obj.sinrRecord(ueList) + sinr;
+            obj.sinrRecord(:,ueList) = obj.sinrRecord(:,ueList) + sinr';
             obj.schedCount(ueList) = obj.schedCount(ueList) + 1;
             
             ueList(queueLen == 0) = [];
             se(queueLen == 0) = [];
             queueLen(queueLen == 0) = [];
 
-            r = obj.thrHistory(ueList)/((sfnum-1)*obj.ttims*1e-3);
+            if (sfnum >  1)
+                r = obj.thrHistory(ueList)/((sfnum-1)*obj.ttims*1e-3);
+            else
+                r = obj.thrHistory(ueList);      % default non-zero starting value
+            end
             
-            wt = (se').*(queueLen > 0)./r;       % Weight for scheduling
+            se0 = se(:,1);
+            wt = (se0').*(queueLen > 0)./(r');       % Weight for scheduling
             
             wt = wt/sum(wt);
             
             bwAlloc = wt*obj.bwMHz;
             
             cap = obj.eta*bwAlloc*(1e6).*(se');
-            txSize = min(cap*obj.ttims*1e-3 , queueLen);
+            txSize = min(cap(1,:)*obj.ttims*1e-3 , queueLen);
             
-            obj.fullBufferRate(ueList) = obj.fullBufferRate(ueList) + cap*obj.ttims*1e-3;
+            obj.fullBufferRate(:,ueList) = obj.fullBufferRate(:,ueList) + cap*obj.ttims*1e-3;
             
             obj.trafficObj.dequeue(txSize, ueList);
             
-            obj.thrHistory(ueList) = obj.thrHistory(ueList) + txSize;
+            obj.thrHistory(ueList) = obj.thrHistory(ueList) + txSize';
             
-            obj.totDataTx(ueList) = obj.totDataTx(ueList) + txSize;
+            obj.totDataTx(ueList) = obj.totDataTx(ueList) + txSize';
             
             obj.numUsrSched(bsIndex, sfnum) = length(ueList);
             
@@ -298,6 +311,8 @@ classdef scheduler < hgsetget
                     ueSel = ueList;
                 end
             end
+            
+            %kappa = obj.DLSinrObj.computeOptimalPowerSplit (ueSel);
 
             opt.ueSched = ueSel;
             opt.powSplit = length(ueSel);
@@ -316,6 +331,45 @@ classdef scheduler < hgsetget
             obj.numUsrSched(bsIndex, sfnum) = length(ueSel);
             
             obj.sinrRecord(ueSel) = obj.sinrRecord(ueSel) + EffSinr'; % in linear scale
+            obj.schedCount(ueSel) = obj.schedCount(ueSel) + 1;
+            
+        end
+        
+        function schedSDMA_xhstv (obj, ueList, sfnum, bsIndex)
+            
+            se = obj.DLSinrObj.computeSingleLinkCapacity(ueList);
+            queueLen = obj.trafficObj.getQueue(ueList);
+            
+            % remove UEs with empty queues
+            se = se'; % Make dimension consistant with the row-major-rest-of-the-code
+            se(queueLen == 0)       = [];
+            ueList(queueLen == 0)   = [];
+            %snr(queueLen == 0)      = [];
+            queueLen(queueLen == 0) = [];
+
+            r = obj.thrHistory(ueList)/((sfnum-1)*obj.ttims*1e-3);
+            wt = se.*(queueLen > 0)./r;       % Weight for scheduling
+            %wt = (queueLen > 0)./r; 
+            [~,ind] = sort(wt,'descend');
+            
+            ueSel = ueList(ind(1));
+            
+            [specEff, EffSinr, ueSel] = obj.DLSinrObj.chooseKusers(ueSel, ueList);
+            
+            cap = obj.eta*obj.bwMHz*(1e6).*(specEff'); % full bandwidth is allocated
+            
+            %if (size(specEff, 2) == 1)  % check this later
+                queueLen = obj.trafficObj.getQueue(ueSel);
+                txSize = min(cap(1,:)*obj.ttims*1e-3 , queueLen);
+                obj.trafficObj.dequeue(txSize, ueSel);
+                obj.thrHistory(ueSel) = obj.thrHistory(ueSel) + txSize;
+                obj.totDataTx(ueSel) = obj.totDataTx(ueSel) + txSize;
+                
+            %end
+            obj.numUsrSched(bsIndex, sfnum) = length(ueSel);
+            obj.fullBufferRate(:, ueSel) = obj.fullBufferRate(:, ueSel) + cap*obj.ttims*1e-3;
+            
+            obj.sinrRecord(:, ueSel) = obj.sinrRecord(:, ueSel) + EffSinr'; % in linear scale
             obj.schedCount(ueSel) = obj.schedCount(ueSel) + 1;
             
         end

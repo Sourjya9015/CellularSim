@@ -1,5 +1,5 @@
 % Uplink and Downlink capacity simulation
-%clc;
+clc; close all;
 % Set path to contain all the subdirectories of NetSim
 addpath(genpath('..'));
 
@@ -16,7 +16,7 @@ ueNoiseFig = 8;     % UE Total (accross all Nrx antennas)noise figure
 nantBS = 64;        % num antennas at the BS
 nantUE = 16;        % num antennas at the UE
 fcMHz = 28e3;       % carrier freq in MHz
-seMax = 4.8;        % max spec. efficiency
+seMax = 7.4063;        % max spec. efficiency, from ts 38.214 with 256 qam
 sinrLossdB = 3;     % loss relative to Shannon capacity
 bwMHz = 1000;       % Total bandwidth in MHz
 picoHex = true;     % Picocells sectorized with hex layout
@@ -25,10 +25,10 @@ multacs = 'fdma';   % FDMA / TDMA flag
 
 if (~exist('multacsDL','var') && ~exist('bsNumStreams','var'))
     multacsDL = 'sdma'; % TDMA/FDMA/SDMA
-    bsNumStreams = 4;   % num of streams; equal to the num of RF streams
+    bsNumStreams = 8;   % num of streams; equal to the num of RF streams
 end
 
-ndrop = 1;          % number of drops
+ndrop = 3;          % number of drops
 calcUL = false;     % calculate UL capacity
 calcDL = true;      % calculate DL capacity
 plModType = 'hybrid';    % select either 'hybrid' or 'dist'
@@ -46,11 +46,17 @@ pedge = 0.05;       % cell-edge percentage = 5
 dutyCycle = 1;    % 50 percent is for DL
 overhead = 0.2;     % 20 percent overhead
 
-nbits = 0;          % quantization bits
-if (nbits > 0)
-    [~,alpha,~] = unifQuant(nbits);
-else
-    alpha = 0;
+nbits = [0 2 3 4];          % quantization bits
+legStr = cell(length(nbits),1);
+alpha = zeros(size(nbits));
+for icnt = 1:length(nbits)
+    if (nbits(icnt) > 0)
+        [~,alpha(icnt),~] = unifQuant(nbits(icnt));
+        legStr{icnt} = sprintf('n = %d', nbits(icnt));
+    else
+        alpha(icnt) = 0;
+        legStr{icnt} = 'n = \infty';
+    end
 end
 
 % Process parameters for batch if a parameter string was supplied
@@ -273,6 +279,7 @@ if (calcDL)
     
     schedRateDL = [];
     serviceDL = [];
+    sinrSched = [];
 end
 
 tti = (1/8)*1e-3; % in seconds
@@ -296,10 +303,12 @@ schedOpts.bwMHz = bwMHz;
 schedOpts.eta = dutyCycle * (1 - overhead);
 schedOpts.nBS = npico;
 schedOpts.ttims = tti*1e3;
+schedOpts.nquant = length(alpha);
 
 sched = scheduler(schedOpts);
 sched.setTrafficModel(trafficHandle);
 
+% tic;
 for idrop = 1 : ndrop
     fprintf(1,'Drop %d of %d\n', idrop, ndrop);
     % Random drop
@@ -319,7 +328,7 @@ for idrop = 1 : ndrop
     bfOpt.txpow = repmat( picoTxPow, npico, 1);    % max TX pow in dBm
     bfOpt.noisepow = chan.kT + 60 + 10*log10(bwMHz) + ueNoiseFig;
     bfOpt.intNull = 0;
-    [pathLossDL,pathLossUL,bfGainRxDLdes, intraOpt] = applyBfGain(pathLoss', Icell, bfOpt);
+    [pathLossDL,pathLossUL,bfGainRxDLdes, intraOpt, bfVecMap] = applyBfGain(pathLoss', Icell, bfOpt);
     % Reduce BF gain if BS is reduced to single stream processing
     if (nstreamBS > 0)
         bfOpt.nstream = nstreamBS;
@@ -366,6 +375,9 @@ for idrop = 1 : ndrop
         opt.rxBFgains = bfGainRxDLdes;                                      % Rx BF gains to the home BS
         opt.alpha = alpha;
         opt.intraOpt = intraOpt;                                            % This is a Map with the UE index as the key
+        opt.bfVecMap = bfVecMap;
+        opt.maxSe = seMax;
+        opt.sirLossdB = sinrLossdB;
 
         
         % nultiple access based parameters
@@ -392,9 +404,9 @@ for idrop = 1 : ndrop
         %schedOut = schedule( npico, Icell, dlSinrCalc, trafficHandle, schedOpt);
         
         schedOut = sched.schedule();
-        schedRateDL = [schedRateDL, schedOut.fullBuffRate];
-        serviceDL = [serviceDL, schedOut.avgWait];
-        sinrSched = schedOut.sinr;
+        schedRateDL = [schedRateDL; (schedOut.fullBuffRate)'];
+        serviceDL = [serviceDL; (schedOut.avgWait)'];
+        sinrSched = [sinrSched; (schedOut.sinr)'];
         %nb
         Ps(:,idrop) = dlSinrCalc.psign;
         N0(:,idrop) = dlSinrCalc.pnoise;
@@ -414,6 +426,14 @@ for idrop = 1 : ndrop
     end
 end
 
+% execTime = toc;
+% fprintf('Execution Time = %f \n sec.', execTime);
+
+zindx = find(sum(schedRateDL,2) == 0);
+schedRateDL(zindx,:) = [];
+serviceDL(zindx,:) = [];
+sinrSched(zindx,:) = [];
+
 if (calcDL)
     seDL = seDL/ndrop;
     rateTotDL = sort(rateDLs(:));
@@ -421,8 +441,8 @@ if (calcDL)
     edgeRateDL = rateTotDL(round(pedge*length(rateTotDL)))*dutyCycle*(1-overhead);
     sinrDL = 10.^(0.1*sinrDLs(:));
     
-    schedRateDL = sort(schedRateDL(:)); % per user rate
-    serviceDL = sort(serviceDL(:));     % service provided per UE
+    schedRateDL = sort(schedRateDL); % per user rate
+    serviceDL = sort(serviceDL);     % service provided per UE
     %nb
     bwmq = bwmq(:);
     snrDL = Ps./N0;
@@ -452,32 +472,44 @@ if ~exist('param','var')
         end
         %rateTotDL = sort(rateDLs(:));
         figure (1);
-        n = length(schedRateDL);
-        p = (1:n)/n;
-        h = semilogx(sort(schedRateDL),p,'-');
+        n = size(schedRateDL,1);
+        p = (1:n)'/n;
+        p = repmat(p, 1, length(nbits));
+        h = semilogx(schedRateDL(:,1),p(:,1),'-'); set(h,'LineWidth',2); hold on;
+        if (length(nbits) > 1)
+            hq = semilogx(schedRateDL(:,2:end),p(:,2:end),'--');
+            set(hq,'LineWidth',2);
+        end
         grid on;
-        set(h,'LineWidth',2);
-        set(gca,'FontSize',16);
+        set(gca,'FontSize',20);
         xlabel('Rate (Mbps)');
         ylabel('Cummulative prob');
+        legend(legStr);
         grid on; hold on;
         %axis([1 1e4 0 1]);
         fprintf(1,'DL:  mean=%10.4e cell-edge=%10.4e \n', avgRateDL, edgeRateDL );
         
         
         figure(2)
-        sinrSched = sinrSched(:);
-        n = length(sinrSched);
-        p = (1:n)/n;
-        h = plot(10*log10(sort(sinrSched)),p,'-');
+        %sinrSched = sinrSched(:);
+        n = size(sinrSched,1);
+        p = (1:n)'/n;
+        p = repmat(p, 1, length(nbits));
+        h = plot(10*log10(sort(sinrSched(:,1))),p(:,1),'-'); set(h,'LineWidth',2); hold on;
+        if (length(nbits) > 1)
+            hq = plot(10*log10(sort(sinrSched(:,2:end))),p(:,2:end),'--'); set(hq,'LineWidth',2);
+        end
         grid on; hold on;
-        set(h,'LineWidth',2);
-        set(gca,'FontSize',16);
+        
+        
+        set(gca,'FontSize',20);
         xlabel('SINR (dB)');
         ylabel('Cummulative prob');
+        legend(legStr);
         %axis([1 1e4 0 1]);
         % for scheduled rate
         
+        if (0)
         nsched = length(serviceDL);
         probLat = (1:nsched)/nsched;
 
@@ -492,6 +524,7 @@ if ~exist('param','var')
         xlabel('Avg. waiting time (ms)');
         ylabel('Cummulative prob');
         %title('Service with RR Scheduler');
+        end
 
     end
     
@@ -502,6 +535,7 @@ end
 figure(4);
 bar(c,p);
 xlabel('Num UE scheduled'); ylabel('Prob.');
+set(gca,'Fontsize', 20);
 
 clear multacsDL bsNumStreams
 
